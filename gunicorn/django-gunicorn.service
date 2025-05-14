@@ -1,0 +1,19 @@
+[Unit]
+Description=django gunicorn daemon
+Requires=django-gunicorn.socket
+After=network.target
+
+[Service]
+User=igate
+Group=www-data
+WorkingDirectory=/home/igate/sku-mapper-backend
+ExecStart=/home/igate/sku-mapper-backend/venv/bin/gunicorn \
+    --access-logfile - \
+    --workers 5 \
+    --timeout 60 \
+    --bind unix:/run/django-gunicorn.sock \
+    sku_mapper.wsgi:application
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

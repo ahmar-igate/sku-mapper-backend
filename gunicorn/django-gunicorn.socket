@@ -1,0 +1,6 @@
+[Unit]
+Description=Django gunicorn socket
+[Socket]
+ListenStream=/run/django-gunicorn.sock
+[Install]
+WantedBy=sockets.target

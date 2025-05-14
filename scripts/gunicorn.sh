@@ -1,12 +1,15 @@
 #!/usr/bin/bash
 
-# Replace {YOUR_PROJECT_MAIN_DIR_NAME} with your actual project directory name
-PROJECT_MAIN_DIR_NAME="sku-mapper-b"
+# Define project directory
+PROJECT_MAIN_DIR_NAME="sku-mapper-backend"
 
-# Copy gunicorn socket and service files
-sudo cp "/home/ubuntu/$PROJECT_MAIN_DIR_NAME/gunicorn/gunicorn.socket" "/etc/systemd/system/gunicorn.socket"
-sudo cp "/home/ubuntu/$PROJECT_MAIN_DIR_NAME/gunicorn/gunicorn.service" "/etc/systemd/system/gunicorn.service"
+# Copy Gunicorn socket and service files
+sudo cp "/home/igate/$PROJECT_MAIN_DIR_NAME/gunicorn/django-gunicorn.socket" "/etc/systemd/system/django-gunicorn.socket"
+sudo cp "/home/igate/$PROJECT_MAIN_DIR_NAME/gunicorn/django-gunicorn.service" "/etc/systemd/system/django-gunicorn.service"
 
-# Start and enable Gunicorn service
-sudo systemctl start gunicorn.service
-sudo systemctl enable gunicorn.service
+# Reload systemd to recognize new units
+sudo systemctl daemon-reload
+
+# Start and enable Django Gunicorn service and socket
+sudo systemctl start django-gunicorn.socket
+sudo systemctl enable django-gunicorn.socket

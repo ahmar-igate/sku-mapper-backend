@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-PROJECT_MAIN_DIR_NAME="sku-mapper-b"
+PROJECT_MAIN_DIR_NAME="sku-mapper-backend"
 
 # Validate variables
 if [ -z "$PROJECT_MAIN_DIR_NAME" ]; then
@@ -10,14 +10,14 @@ if [ -z "$PROJECT_MAIN_DIR_NAME" ]; then
 fi
 
 # Change ownership to ubuntu user
-sudo chown -R ubuntu:ubuntu "/home/ubuntu/$PROJECT_MAIN_DIR_NAME"
+sudo chown -R igate:igate "/home/igate/$PROJECT_MAIN_DIR_NAME"
 
 # Change directory to the project main directory
-cd "/home/ubuntu/$PROJECT_MAIN_DIR_NAME"
+cd "/home/igate/$PROJECT_MAIN_DIR_NAME"
 
 # Activate virtual environment
 echo "Activating virtual environment..."
-source "/home/ubuntu/$PROJECT_MAIN_DIR_NAME/venv/bin/activate"
+source "/home/igate/$PROJECT_MAIN_DIR_NAME/venv/bin/activate"
 
 # Run collectstatic command
 echo "Running collectstatic command..."

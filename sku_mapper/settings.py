@@ -29,7 +29,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 DEBUG = False
 
 ALLOWED_HOSTS = ['*']
-CSRF_TRUSTED_ORIGINS = ['https://skumapper.x-demand.com']
+CSRF_TRUSTED_ORIGINS = ['*']
 
 
 # Application definition
