@@ -10,6 +10,7 @@ urlpatterns = [
     path('token/', views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path("update_mapping/<int:id>", views.UpdateMapping.as_view(), name="update_mapping"),
+    path("update_mapping_bulk/", views.BulkUpdateMapping.as_view(), name="update_mapping_bulk"),
     path("save_mapping/", views.SaveMapping.as_view(), name="save_mapping"),
     
     # path('test-db/', views.test_db_connection, name='test_db_connection'),

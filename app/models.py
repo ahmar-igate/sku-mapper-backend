@@ -95,7 +95,7 @@ class product_mapping(models.Model):
         
 class new_product_mapping(models.Model):
     id = models.AutoField(primary_key=True)
-    marketplace_sku = models.CharField(max_length=255, unique=True)
+    marketplace_sku = models.CharField(max_length=255)
     asin = models.CharField(max_length=255)
     im_sku = models.CharField(max_length=255, null=True, blank=True)
     parent_sku = models.CharField(max_length=255, blank=True, null=True)
