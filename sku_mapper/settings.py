@@ -29,7 +29,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 DEBUG = False
 
 ALLOWED_HOSTS = ['*']
-CSRF_TRUSTED_ORIGINS = ['*']
+CSRF_TRUSTED_ORIGINS = ['http://192.168.168.49', 'http://115.186.57.2']
 # CSRF_TRUSTED_ORIGINS = ['http://localhost:5173']
 
 

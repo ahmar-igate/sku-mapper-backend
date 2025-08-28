@@ -266,8 +266,8 @@ class Dashboard(APIView):
             # print(type(serializer.data))
             df = pd.DataFrame(serializer.data)
             null_im_sku = df['im_sku'].isnull().sum()
-            unique_im_sku = df['im_sku'].nunique()
-            unique_parent_sku = df['parent_sku'].nunique()
+            unique_im_sku = df['im_sku'].str.strip().nunique()
+            unique_parent_sku = df['parent_sku'].str.strip().nunique()
             unique_marketplace_sku = df['marketplace_sku'].nunique()
             unique_regions = df['region'].nunique()
             null_parent_sku = df['parent_sku'].isnull().sum()
@@ -297,7 +297,7 @@ class Dashboard(APIView):
         # Return the serialized data along with a welcome message
         return Response(
             {
-                "message": "Welcome to the dashboard!",
+                "message": "Welcome to the dashboard!!!",
                 "mapping_data": serializer.data,
                 "null_im_sku": null_im_sku,
                 "unique_im_sku": unique_im_sku,
@@ -1134,7 +1134,7 @@ class SaveMapping(APIView):
 
         # DELETE statement for "unmapping"
         delete_sql = """
-            DELETE FROM look_product_hierarchy_test
+            DELETE FROM look_product_hierarchy
             WHERE marketplace_sku = %s
               AND region = %s
         """
@@ -1142,12 +1142,12 @@ class SaveMapping(APIView):
         upsert_sql = """
         IF EXISTS (
             SELECT 1 
-            FROM look_product_hierarchy_test
+            FROM look_product_hierarchy
             WHERE marketplace_sku = %s 
               AND region = %s
         )
         BEGIN
-            UPDATE look_product_hierarchy_test
+            UPDATE look_product_hierarchy
             SET
                 asin = %s,
                 im_sku = %s,
@@ -1168,7 +1168,7 @@ class SaveMapping(APIView):
         END
         ELSE
         BEGIN
-            INSERT INTO look_product_hierarchy_test
+            INSERT INTO look_product_hierarchy
             (
                 marketplace_sku,
                 asin,
@@ -1193,7 +1193,7 @@ class SaveMapping(APIView):
 
         # Add SQL to update parent_sku for all records with same im_sku
         update_parent_sku_sql = """
-            UPDATE look_product_hierarchy_test
+            UPDATE look_product_hierarchy
             SET parent_sku = %s
             WHERE im_sku = %s
         """
