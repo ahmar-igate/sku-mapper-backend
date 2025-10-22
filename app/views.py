@@ -125,6 +125,87 @@ def import_product_mapping(request):
             product_mapping.objects.bulk_create(records, ignore_conflicts=True)
 
             # Step 2: Execute the join query on the secondary database.
+#             query = """
+# WITH CombinedData AS (
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))) AS SellerSKU,
+#         ASIN,
+#         Region,
+#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) AS SalesChannel,
+#         PurchaseDate_Materialized AS PurchaseDate,
+#         Title
+#     FROM dbo.amazon_api_de
+#     WHERE OrderStatus_Optimized = 'Shipped' 
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+    
+#     UNION ALL
+    
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         ASIN,
+#         Region,
+#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_es
+#     WHERE OrderStatus_Optimized = 'Shipped' 
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+    
+#     UNION ALL
+    
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         ASIN,
+#         Region,
+#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_it
+#     WHERE OrderStatus_Optimized = 'Shipped' 
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+    
+#     UNION ALL
+    
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         ASIN,
+#         Region,
+#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_uk
+#     WHERE OrderStatus_Optimized = 'Shipped' 
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+# ),
+# DistinctSellers AS (
+#     SELECT DISTINCT SellerSKU, ASIN, Region, SalesChannel
+#     FROM CombinedData
+# ),
+# LatestTitle AS (
+#     SELECT
+#         SellerSKU,
+#         SalesChannel,
+#         PurchaseDate,
+#         Title,
+#         ROW_NUMBER() OVER (
+#             PARTITION BY SellerSKU, SalesChannel 
+#             ORDER BY PurchaseDate DESC
+#         ) AS rn
+#     FROM CombinedData
+# )
+# SELECT 
+#     ds.SellerSKU, 
+#     ds.ASIN, 
+#     ds.Region, 
+#     ds.SalesChannel,
+#     lt.PurchaseDate AS [Date], 
+#     lt.Title
+# FROM DistinctSellers ds
+# LEFT JOIN LatestTitle lt
+#     ON ds.SellerSKU = lt.SellerSKU 
+#     AND ds.SalesChannel = lt.SalesChannel
+#     AND lt.rn = 1;
+#             """
             query = """
 WITH CombinedData AS (
     SELECT
@@ -176,6 +257,32 @@ WITH CombinedData AS (
     FROM dbo.amazon_api_uk
     WHERE OrderStatus_Optimized = 'Shipped' 
       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+    
+    UNION ALL
+
+    SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+        ASIN,
+        Region,
+        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        PurchaseDate_Materialized,
+        Title
+    FROM dbo.amazon_api_us
+    WHERE OrderStatus_Optimized = 'Shipped' 
+      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+    
+    UNION ALL
+
+    SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+        ASIN,
+        Region,
+        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        PurchaseDate_Materialized,
+        Title
+    FROM dbo.amazon_api_ca
+    WHERE OrderStatus_Optimized = 'Shipped' 
+      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
 ),
 DistinctSellers AS (
     SELECT DISTINCT SellerSKU, ASIN, Region, SalesChannel
@@ -205,7 +312,8 @@ LEFT JOIN LatestTitle lt
     ON ds.SellerSKU = lt.SellerSKU 
     AND ds.SalesChannel = lt.SalesChannel
     AND lt.rn = 1;
-            """
+"""
+
             with connections['secondary'].cursor() as cursor:
                 cursor.execute(query)
                 join_results = cursor.fetchall()
