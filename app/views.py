@@ -922,6 +922,8 @@ def updateMapping_helper(mapping_data, id):
         company = 'B2fitness'
     elif region == "ES":
         company = 'B2fitness LTD'
+    elif region in ["US", "CA"]:
+        company = 'brandsinn'
     else:
         company = None  # or whatever default you want
     # ------------------------------------------------------------------
