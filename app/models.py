@@ -39,6 +39,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         SCM = 'SCM', 'Supply Chain Management'
         FINANCE = 'FINANCE', 'Finance Department'
         ADMIN = 'ADMIN', 'Administrator'
+        READ_ONLY = 'READ_ONLY', 'Read Only'
     
     email = models.EmailField(unique=True)
     # Optional additional fields

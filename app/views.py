@@ -724,6 +724,10 @@ class UpdateMapping(APIView):
     def put(self, request, id, *args, **kwargs):
         try:
             mapping_data = request.data
+            # Disallow updates for read-only users
+            dept = request.data.get('department') if isinstance(request.data, dict) else None
+            if dept and str(dept).upper() == 'READ_ONLY':
+                return Response({'message': 'Read-only users cannot update mappings.'}, status=status.HTTP_403_FORBIDDEN)
             logger.info("Received mapping data for id %s: %s", id, mapping_data)
             print("Received mapping data for id %s: %s", id, mapping_data)
             response_data, created = updateMapping_helper(mapping_data, id)
@@ -994,6 +998,9 @@ class BulkUpdateMapping(APIView):
             user_email = request.data.get('user_email')
             print("BulkUpdateMapping request data user_email: ", user_email)
             print("BulkUpdateMapping request data: ", req)
+            # Block operation for read-only users
+            if dept and str(dept).upper() == 'READ_ONLY':
+                return Response({'error': 'Read-only users cannot perform bulk upload.'}, status=403)
             if not dept:
                 return Response({'error': 'Unexpected error occured. Department is missing'}, status=400)
             if dept not in ['SCM', 'FINANCE', 'ADMIN']:
@@ -1111,6 +1118,10 @@ from collections import defaultdict
 
 class SaveMapping(APIView):
     def post(self, request, *args, **kwargs):
+        # Disallow save for read-only users
+        dept = request.data.get('department') if isinstance(request.data, dict) else None
+        if dept and str(dept).upper() == 'READ_ONLY':
+            return Response({'error': 'Read-only users cannot save mapping.'}, status=status.HTTP_403_FORBIDDEN)
         mapping_data_qs = new_product_mapping.objects.using('default').all()
         serializer = NewProductMappingSerializer(mapping_data_qs, many=True)
         
