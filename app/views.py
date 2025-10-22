@@ -67,7 +67,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     permission_classes = (AllowAny,)
     serializer_class = CustomTokenObtainPairSerializer
     
-# def import_product_mapping(request):
+# def import_product_mapping_from_csv(request):
 #     if request.method == "GET":
 #         try:
 #             # Read CSV file
@@ -102,7 +102,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 #     return JsonResponse({"error": "Only POST method allowed"}, status=405)
 
 
-def import_product_mapping(request):
+def import_product_mapping_from_csv(request):
     if request.method == "GET":
         try:
             # Step 1: Import CSV data into product_mapping table.
@@ -267,7 +267,7 @@ WITH CombinedData AS (
         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
         PurchaseDate_Materialized,
         Title
-    FROM dbo.amazon_api_us
+    FROM dbo.amazon_api_usa
     WHERE OrderStatus_Optimized = 'Shipped' 
       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
     
@@ -357,7 +357,176 @@ LEFT JOIN LatestTitle lt
 
     return JsonResponse({"error": "Only GET method allowed"}, status=405)
 
+            
+def import_product_mapping_from_db(request):
+    if request.method == "GET":
+        try:
+            query = "SELECT * FROM dbo.amazon_api_ca;"
+            # Read data from product_mapping table
+            with connections['secondary'].cursor() as cursor:
+                cursor.execute(query)
+                results = cursor.fetchall()
+                records = []
+                for row in results:
+                    marketplace_sku = row['marketplace_sku'],
+                    asin = row['asin'],
+                    im_sku = row['im_sku'],
+                    region = row['region'],
+                    sales_channel = row['SalesChannel'],
+                    level_1 = row['level_1'],
+                    linworks_title = row['Linnworks Title'],
+                    modified_by = row["linnwork's_sku_received_from"],
+                    comment = row['Comment'] if "Comment" in row and pd.notna(row["Comment"]) else None,
+                    record = product_mapping(
+                        marketplace_sku=marketplace_sku,
+                        asin=asin,
+                        im_sku=im_sku,
+                        region=region,
+                        sales_channel=sales_channel,
+                        level_1=level_1,
+                        linworks_title=linworks_title,
+                        modified_by=modified_by,
+                        comment=comment,
+                    )
+                    records.append(record)
 
+            product_mapping.objects.bulk_create(records, ignore_conflicts=True)
+            query = """
+WITH CombinedData AS (
+    SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))) AS SellerSKU,
+        ASIN,
+        Region,
+        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) AS SalesChannel,
+        PurchaseDate_Materialized AS PurchaseDate,
+        Title
+    FROM dbo.amazon_api_de
+    WHERE OrderStatus_Optimized = 'Shipped' 
+      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+    
+    UNION ALL
+    
+    SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+        ASIN,
+        Region,
+        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        PurchaseDate_Materialized,
+        Title
+    FROM dbo.amazon_api_es
+    WHERE OrderStatus_Optimized = 'Shipped' 
+      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+    
+    UNION ALL
+    
+    SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+        ASIN,
+        Region,
+        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        PurchaseDate_Materialized,
+        Title
+    FROM dbo.amazon_api_it
+    WHERE OrderStatus_Optimized = 'Shipped' 
+      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+    
+    UNION ALL
+    
+    SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+        ASIN,
+        Region,
+        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        PurchaseDate_Materialized,
+        Title
+    FROM dbo.amazon_api_uk
+    WHERE OrderStatus_Optimized = 'Shipped' 
+      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+    
+    UNION ALL
+
+    SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+        ASIN,
+        Region,
+        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        PurchaseDate_Materialized,
+        Title
+    FROM dbo.amazon_api_usa
+    WHERE OrderStatus_Optimized = 'Shipped' 
+      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+    
+    UNION ALL
+
+    SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+        ASIN,
+        Region,
+        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        PurchaseDate_Materialized,
+        Title
+    FROM dbo.amazon_api_ca
+    WHERE OrderStatus_Optimized = 'Shipped' 
+      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+),
+DistinctSellers AS (
+    SELECT DISTINCT SellerSKU, ASIN, Region, SalesChannel
+    FROM CombinedData
+),
+LatestTitle AS (
+    SELECT
+        SellerSKU,
+        SalesChannel,
+        PurchaseDate,
+        Title,
+        ROW_NUMBER() OVER (
+            PARTITION BY SellerSKU, SalesChannel 
+            ORDER BY PurchaseDate DESC
+        ) AS rn
+    FROM CombinedData
+)
+SELECT 
+    ds.SellerSKU, 
+    ds.ASIN, 
+    ds.Region, 
+    ds.SalesChannel,
+    lt.PurchaseDate AS [Date], 
+    lt.Title
+FROM DistinctSellers ds
+LEFT JOIN LatestTitle lt
+    ON ds.SellerSKU = lt.SellerSKU 
+    AND ds.SalesChannel = lt.SalesChannel
+    AND lt.rn = 1;
+"""
+
+            with connections['secondary'].cursor() as cursor:
+                cursor.execute(query)
+                join_results = cursor.fetchall()
+
+            # Step 3: Update matching product_mapping records or create new ones.
+            records_to_update = []
+            new_records = []
+            for row in join_results:
+                seller_sku, asin, region, sales_channel, date_val, title = row
+                qs = product_mapping.objects.filter(
+                    marketplace_sku__iexact=seller_sku,
+                    sales_channel__iexact=sales_channel
+                )
+                if qs.exists():
+                    for pm_obj in qs:
+                        pm_obj.date = date_val  # Update the date field.
+                        pm_obj.amazon_title = title  # Update amazon_title with Title.
+                        records_to_update.append(pm_obj)
+
+            if records_to_update:
+                product_mapping.objects.bulk_update(records_to_update, ['date', 'amazon_title'])
+
+            return JsonResponse({"message": "Data imported and joined data saved successfully"}, status=201)
+
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"error": "Only GET method allowed"}, status=405)
 
 class Dashboard(APIView):
     """
@@ -705,7 +874,7 @@ LEFT JOIN LatestTitle lt
                 {"SellerSKU": row[0], "ASIN": row[1], "Region": row[2], "SalesChannel": row[3], "Date": row[4], "Title": row[5]} 
                 for row in amazon_results
             ]
-            print("amazon_data: ", amazon_data[12])
+            print(f"Fetched {len(amazon_data)} rows from secondary; sample: {amazon_data[0] if amazon_data else '[]'}")
             
             # --- Transformation Step on Secondary DB Records ---
             # Convert to DataFrame and apply transformations on the 'SellerSKU' column.
@@ -713,9 +882,22 @@ LEFT JOIN LatestTitle lt
             # df_amazon = update_lin_categ_title_if_exists(df_amazon)
             df_amazon.to_csv("amazon_data.csv", encoding='utf-8', index=False)
             if not df_amazon.empty:
-                df_amazon['SellerSKU'] = df_amazon['SellerSKU'].astype(str)
-                df_amazon['SellerSKU'] = df_amazon['SellerSKU'].apply(lambda x: x.strip())
-                df_amazon['SellerSKU'] = df_amazon['SellerSKU'].apply(str.upper)
+                # Normalize SKU
+                df_amazon['SellerSKU'] = df_amazon['SellerSKU'].astype(str).str.strip().str.upper()
+                # Normalize Region (common variants -> standard codes)
+                df_amazon['Region'] = df_amazon['Region'].astype(str).str.strip().str.upper()
+                df_amazon['Region'] = df_amazon['Region'].replace({
+                    'USA': 'US',
+                    'UNITED STATES': 'US',
+                    'UNITED STATES OF AMERICA': 'US',
+                    'CANADA': 'CA'
+                })
+                # Tidy SalesChannel text
+                df_amazon['SalesChannel'] = df_amazon['SalesChannel'].astype(str).str.strip()
+                # Quick diagnostics for US/CA pickup
+                us_count = int((df_amazon['Region'] == 'US').sum())
+                ca_count = int((df_amazon['Region'] == 'CA').sum())
+                print(f"Amazon rows by region -> US: {us_count}, CA: {ca_count}, ALL: {len(df_amazon)}")
             # Convert back to a list of dictionaries.
             amazon_data = df_amazon.to_dict('records')
             # --- End Transformation Step ---
