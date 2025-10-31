@@ -361,36 +361,108 @@ LEFT JOIN LatestTitle lt
 def import_product_mapping_from_db(request):
     if request.method == "GET":
         try:
-            query = "SELECT * FROM dbo.amazon_api_ca;"
+            region = "usa"
+            # Get existing mapping data
+            mapping_data_qs = product_mapping.objects.using('default').filter(
+                region__iexact='us'
+            ).filter(
+                Q(im_sku__isnull=True) | Q(im_sku=''),
+                Q(linworks_title__isnull=True) | Q(linworks_title=''),
+                Q(level_1__isnull=True) | Q(level_1=''),
+            )
+
+            # Convert existing mappings to DataFrame
+            serializer = ProductMappingSerializer(mapping_data_qs, many=True)
+            df_existing = pd.DataFrame(serializer.data)
+            
+            # Handle case where df might be empty so that it doesn’t crash when df_existing is empty. It gives pandas a correctly shaped empty DataFrame to work with
+            if df_existing.empty:
+                df_existing = pd.DataFrame(columns=["marketplace_sku", "asin", "region", "sales_channel"])
+
+            # Run the SQL query
+            query_1 = f"""
+                SELECT DISTINCT SellerSKU, ASIN, Region, SalesChannel
+                FROM (
+                    SELECT SellerSKU, ASIN, Region, SalesChannel 
+                    FROM dbo.amazon_api_{region}
+                    WHERE OrderStatus = 'Shipped' 
+                      AND SalesChannel != 'Non-Amazon'
+                ) AS a;
+            """
+            
             # Read data from product_mapping table
             with connections['secondary'].cursor() as cursor:
-                cursor.execute(query)
-                results = cursor.fetchall()
-                records = []
-                for row in results:
-                    marketplace_sku = row['marketplace_sku'],
-                    asin = row['asin'],
-                    im_sku = row['im_sku'],
-                    region = row['region'],
-                    sales_channel = row['SalesChannel'],
-                    level_1 = row['level_1'],
-                    linworks_title = row['Linnworks Title'],
-                    modified_by = row["linnwork's_sku_received_from"],
-                    comment = row['Comment'] if "Comment" in row and pd.notna(row["Comment"]) else None,
-                    record = product_mapping(
-                        marketplace_sku=marketplace_sku,
-                        asin=asin,
-                        im_sku=im_sku,
-                        region=region,
-                        sales_channel=sales_channel,
-                        level_1=level_1,
-                        linworks_title=linworks_title,
-                        modified_by=modified_by,
-                        comment=comment,
-                    )
-                    records.append(record)
+                cursor.execute(query_1)
+                columns = [col[0] for col in cursor.description]
+                results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
+            df_query = pd.DataFrame(results)
+            
+            # If df_existing not empty, filter out duplicates
+            if not df_existing.empty:
+                # Rename to align column names
+                df_existing.rename(
+                    columns={"marketplace_sku": "SellerSKU", "asin": "ASIN", "region": "Region", "sales_channel": "SalesChannel"},
+                    inplace=True
+                )
+
+                # Merge to get only new rows
+                df_new = df_query.merge(df_existing, on=["SellerSKU", "ASIN", "Region", "SalesChannel"], how="left", indicator=True)
+                df_new = df_new[df_new["_merge"] == "left_only"].drop(columns=["_merge"])
+            else:
+                df_new = df_query
+
+            print(f"Existing records: {len(df_existing)}")
+            print(f"New records to insert: {len(df_new)}")
+            
+            # Prepare objects for bulk_create
+            records = [
+                product_mapping(
+                    marketplace_sku=row["SellerSKU"],
+                    asin=row["ASIN"],
+                    im_sku=None,
+                    region=row["Region"],
+                    sales_channel=row["SalesChannel"],
+                    level_1=None,
+                    linworks_title=None,
+                    modified_by=None,
+                    comment=None,
+                )
+                for _, row in df_new.iterrows()
+            ]
+            # Insert new records only
             product_mapping.objects.bulk_create(records, ignore_conflicts=True)
+
+            print(f"✅ Inserted {len(records)} new records successfully.")
+
+                # print(len(results))
+                # # results = cursor.fetchall()
+                # # print(len(results))
+                # records = []
+                # for row in results:
+                #     marketplace_sku = row['SellerSKU']
+                #     asin = row['ASIN']
+                #     # im_sku = row['im_sku'],
+                #     region = row['Region']
+                #     sales_channel = row['SalesChannel']
+                #     # level_1 = row['level_1'],
+                #     # linworks_title = row['Linnworks Title'],
+                #     # modified_by = row["linnwork's_sku_received_from"],
+                #     # comment = row['Comment'] if "Comment" in row and pd.notna(row["Comment"]) else None,
+                #     print(marketplace_sku, asin, region, sales_channel)
+                #     record = product_mapping(
+                #         marketplace_sku=marketplace_sku,
+                #         asin=asin,
+                #         im_sku=None,
+                #         region=region,
+                #         sales_channel=sales_channel,
+                #         level_1=None,
+                #         linworks_title=None,
+                #         modified_by=None,
+                #         comment=None,
+                #     )
+                #     records.append(record)
+            # product_mapping.objects.bulk_create(records, ignore_conflicts=True)
             query = """
 WITH CombinedData AS (
     SELECT
