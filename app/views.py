@@ -614,14 +614,19 @@ class Dashboard(APIView):
             serializer = ProductMappingSerializer(mapping_data_qs, many=True)
             # print(type(serializer.data))
             df = pd.DataFrame(serializer.data)
-            null_im_sku = df['im_sku'].isnull().sum()
+            # null_im_sku = df['im_sku'].isnull().sum()
+            null_im_sku = (df["im_sku"].isnull() | (df["im_sku"] == "")).sum()
             unique_im_sku = df['im_sku'].str.strip().nunique()
             unique_parent_sku = df['parent_sku'].str.strip().nunique()
             unique_marketplace_sku = df['marketplace_sku'].nunique()
             unique_regions = df['region'].nunique()
-            null_parent_sku = df['parent_sku'].isnull().sum()
-            lin_category_to_be_mapped = df['level_1'].isnull().sum()
+            # null_parent_sku = df['parent_sku'].isnull().sum()
+            null_parent_sku = (df["parent_sku"].isnull() | (df["parent_sku"] == "")).sum()
+            # lin_category_to_be_mapped = df['level_1'].isnull().sum()
+            lin_category_to_be_mapped = (df["level_1"].isnull() | (df["level_1"] == "")).sum()
             lin_title_to_be_mapped = df['linworks_title'].isnull().sum()
+            lin_title_to_be_mapped = (df["linworks_title"].isnull() | (df["linworks_title"] == "")).sum()
+            
             # Filter rows where category is 'Abondedn items' (case and space insensitive)
             abandoned_df = df[df['level_1'].str.strip().str.lower() == 'abandoned items']
             # Count unique im_sku values after stripping whitespace
@@ -1070,6 +1075,25 @@ LEFT JOIN LatestTitle lt
                     record["modified_by"] = mapping_record_alt.get("modified_by")
                     record["comment"] = mapping_record_alt.get("comment")
             
+            # 5. Normalize missing string fields: keep them as empty strings instead of None/NaN/'nan'
+            #    This avoids returning/saving None for optional text fields when data isn't available.
+            char_fields = [
+                "im_sku",
+                "sales_channel",
+                "level_1",
+                "parent_sku",
+                "linworks_title",
+                "modified_by",
+                "comment",
+                "amazon_title",
+            ]
+            for rec in joined_data:
+                for f in char_fields:
+                    val = rec.get(f)
+                    # Treat None, NaN, and literal strings 'nan'/'none' as empty
+                    if val is None or (isinstance(val, float) and pd.isna(val)) or (isinstance(val, str) and val.strip().lower() in ("nan", "none")):
+                        rec[f] = ""
+            
             # 6. Export the joined data to CSV using pandas.
             # df = pd.DataFrame(joined_data)
             # df.to_csv("joined_data.csv", encoding='utf-8', index=False)
@@ -1118,7 +1142,8 @@ LEFT JOIN LatestTitle lt
                         level1_not_null_before += 1
                     
                     # Update fields
-                    obj.im_sku = record["im_sku"]
+                    # ensure im_sku never persists as None/NaN
+                    obj.im_sku = record["im_sku"] or ""
                     obj.sales_channel = record["sales_channel"]
                     obj.level_1 = record["level_1"]
                     obj.linworks_title = record["linworks_title"]
@@ -1134,7 +1159,7 @@ LEFT JOIN LatestTitle lt
                         marketplace_sku=record["marketplace_sku"],
                         asin=record["asin"],
                         region=record["region"],
-                        im_sku=record["im_sku"],
+                        im_sku=record["im_sku"] or "",
                         sales_channel=record["sales_channel"],
                         level_1=record["level_1"],
                         parent_sku=record["parent_sku"],
