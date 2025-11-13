@@ -11,6 +11,7 @@ from django.db import connections #type: ignore
 from .serializers import CustomTokenObtainPairSerializer, NewProductMappingSerializer, ProductMappingSerializer
 from .models import product_mapping, new_product_mapping
 import pandas as pd #type: ignore
+import chardet
 from django.db.models import Q
 from django.http import JsonResponse
 from django.db import transaction #type: ignore
@@ -1509,9 +1510,20 @@ class BulkUpdateMapping(APIView):
             if not uploaded_file:
                 return Response({'error': 'No file was uploaded.'}, status=400)
 
-            # Read the file content
-            decoded_file = uploaded_file.read().decode('utf-8')
-            df = pd.read_csv(io.StringIO(decoded_file))
+            # # Read the file content
+            # decoded_file = uploaded_file.read().decode('utf-8')
+            # df = pd.read_csv(io.StringIO(decoded_file))
+            raw_data = uploaded_file.read()
+            encoding = chardet.detect(raw_data)['encoding'] or 'utf-8'
+            # Try to detect delimiter
+            first_line = raw_data.split(b'\n')[0].decode(encoding)
+            delimiter = ','  # default
+            if '\t' in first_line:
+                delimiter = '\t'
+
+            df = pd.read_csv(io.BytesIO(raw_data), delimiter=delimiter, encoding=encoding)
+
+            # df = pd.read_csv(io.BytesIO(raw_data), encoding=encoding)
 
             print("Parsed CSV DataFrame:")
             print(df.head())  # For debugging
@@ -1533,17 +1545,19 @@ class BulkUpdateMapping(APIView):
                 return Response({'error': f'Missing required columns: {required_columns - set(df.columns)}'},
                                 status=400)
             
-            # columns to check for null rows
-            columns_to_check = [
-                'ID', 'ASIN', 'Linnworks SKU', 'Parent SKU', 'Linnworks Title',
-                'Date', 'Marketplace SKU', 'Region', 'Amazon Title',
-                'Sales Channel', 'Linnworks Category'
-            ]
-            # Check for NaN, None, or blank ("") values
-            has_issues = df[columns_to_check].isnull().any(axis=1) | (df[columns_to_check] == '').any(axis=1)
-            # If any problematic rows are found, raise an error
-            if has_issues.any():
-                return Response({'error': "Data contains null, NaN, or blank ('') values. Please fill it and upload again."}, status=400)
+            # Commented this null check code block on 13 november 2025 because each dept are required to upload only their respective columns
+            
+            # # columns to check for null rows
+            # columns_to_check = [
+            #     'ID', 'ASIN', 'Linnworks SKU', 'Parent SKU', 'Linnworks Title',
+            #     'Date', 'Marketplace SKU', 'Region', 'Amazon Title',
+            #     'Sales Channel', 'Linnworks Category'
+            # ]
+            # # Check for NaN, None, or blank ("") values
+            # has_issues = df[columns_to_check].isnull().any(axis=1) | (df[columns_to_check] == '').any(axis=1)
+            # # If any problematic rows are found, raise an error
+            # if has_issues.any():
+            #     return Response({'error': "Data contains null, NaN, or blank ('') values. Please fill it and upload again."}, status=400)
             
             if dept == 'SCM':
                 # Overwrite all values in 'Mapped By SCM' with user_email
