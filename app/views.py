@@ -1244,15 +1244,21 @@ def updateMapping_helper(mapping_data, id):
     # ------------------------------------------------------------------
     # Handle parent_sku - allow it to be set to null/empty
     incoming_parent_sku = mapping_data.get('parent_sku')
-    if incoming_parent_sku is not None:
-        incoming_parent_sku = incoming_parent_sku.strip() if incoming_parent_sku else None
+    print("Incoming parent_sku:", incoming_parent_sku)
+    print("type of incoming parent sku: ", type(incoming_parent_sku))
+    if incoming_parent_sku is not None and incoming_parent_sku != '' and str(incoming_parent_sku).strip().lower() not in ('none', 'nan'):
+        incoming_parent_sku = incoming_parent_sku.strip() if incoming_parent_sku else ''
+        print("I am here")
+    else:
+        incoming_parent_sku = ''
+    print("Incoming parent_sku2:", incoming_parent_sku)
     obj, created = product_mapping.objects.update_or_create(
         id=id,
         defaults={
             'marketplace_sku': mapping_data.get('marketplace_sku', '').strip() if mapping_data.get('marketplace_sku') else None,
             'asin': mapping_data.get('asin', '').strip() if mapping_data.get('asin') else None,
             'im_sku': mapping_data.get('im_sku', '').strip() if mapping_data.get('im_sku') else None,
-            'parent_sku': incoming_parent_sku.strip() if incoming_parent_sku else None,
+            'parent_sku': incoming_parent_sku.strip() if incoming_parent_sku else '',
             'region': mapping_data.get('region', '').strip() if mapping_data.get('region') else None,
             'sales_channel': mapping_data.get('sales_channel', '').strip() if mapping_data.get('sales_channel') else None,
             'level_1': mapping_data.get('level_1', '').strip() if mapping_data.get('level_1') else None,
@@ -1276,6 +1282,7 @@ def updateMapping_helper(mapping_data, id):
     # If there's a valid im_sku
     im_sku_value = (obj.im_sku or '').strip()
     if im_sku_value:
+        print("incoming_parent_sku before update:", incoming_parent_sku)
         # Update all records with the same im_sku to have the same parent_sku
         # This will set parent_sku to None if incoming_parent_sku is None
         product_mapping.objects.filter(im_sku__iexact=im_sku_value).update(parent_sku=incoming_parent_sku)
@@ -1544,6 +1551,23 @@ class BulkUpdateMapping(APIView):
             if not required_columns.issubset(df.columns):
                 return Response({'error': f'Missing required columns: {required_columns - set(df.columns)}'},
                                 status=400)
+                        #    This avoids returning/saving None for optional text fields when data isn't available.
+            char_fields = [
+                "im_sku",
+                "sales_channel",
+                "level_1",
+                "parent_sku",
+                "linworks_title",
+                "modified_by",
+                "comment",
+                "amazon_title",
+            ]
+            for _, rec in df.iterrows():
+                for f in char_fields:
+                    val = rec.get(f)
+                    # Treat None, NaN, and literal strings 'nan'/'none' as empty
+                    if val is None or (isinstance(val, float) and pd.isna(val)) or (isinstance(val, str) and val.strip().lower() in ("nan", "none")):
+                        rec[f] = ""
             
             # Commented this null check code block on 13 november 2025 because each dept are required to upload only their respective columns
             
@@ -1599,7 +1623,7 @@ class BulkUpdateMapping(APIView):
                     'level_1': row.get('Linnworks Category'),
                     'linworks_title': row.get('Linnworks Title'),
                     'amazon_title': row.get('Amazon Title'),
-                    'parent_sku': row.get('Parent SKU'),
+                    'parent_sku': row.get('Parent SKU') if row.get('Parent SKU') else '',
                     'modified_by': row.get('Mapped By SCM') if dept == 'SCM' else None,
                     'modified_by_finance': row.get('Mapped By Finance') if dept == 'FINANCE' else None,
                     'modified_by_admin': row.get('Mapped By Admin') if dept == 'ADMIN' else None,
