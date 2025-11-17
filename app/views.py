@@ -958,7 +958,7 @@ LEFT JOIN LatestTitle lt
             # Convert to DataFrame and apply transformations on the 'SellerSKU' column.
             df_amazon = pd.DataFrame(amazon_data)
             # df_amazon = update_lin_categ_title_if_exists(df_amazon)
-            # df_amazon.to_csv("amazon_data.csv", encoding='utf-8', index=False)
+            df_amazon.to_csv("amazon_data.csv", encoding='utf-8', index=False)
             if not df_amazon.empty:
                 # Normalize SKU
                 df_amazon['SellerSKU'] = df_amazon['SellerSKU'].astype(str).str.strip().str.upper()
@@ -1252,6 +1252,11 @@ def updateMapping_helper(mapping_data, id):
     else:
         incoming_parent_sku = ''
     print("Incoming parent_sku2:", incoming_parent_sku)
+    
+    """
+    Previously, we are using update_or_create so that when we upload csv file a new row is created which we not need according to
+    zeeshan bukhari
+    
     obj, created = product_mapping.objects.update_or_create(
         id=id,
         defaults={
@@ -1267,6 +1272,7 @@ def updateMapping_helper(mapping_data, id):
             'comment_by_finance': mapping_data.get('comment_by_finance', '').strip() if mapping_data.get('comment_by_finance') else None,
         }
     )
+    
     # Update the appropriate modified_by field based on department
     if mapping_data.get('modified_by') and mapping_data.get('modified_by').strip():
         obj.modified_by = mapping_data.get('modified_by')
@@ -1276,6 +1282,39 @@ def updateMapping_helper(mapping_data, id):
         obj.modified_by_admin = mapping_data.get('modified_by_admin')
     
     obj.save()
+    
+    """
+    print("ID: ", id)
+    qs = product_mapping.objects.filter(id=id)
+    qs.update(
+        marketplace_sku=(mapping_data.get('marketplace_sku') or "").strip() or None,
+        asin=(mapping_data.get('asin') or "").strip() or None,
+        im_sku=(mapping_data.get('im_sku') or "").strip() or None,
+        parent_sku=incoming_parent_sku.strip() if incoming_parent_sku else "",
+        region=(mapping_data.get('region') or "").strip() or None,
+        sales_channel=(mapping_data.get('sales_channel') or "").strip() or None,
+        level_1=(mapping_data.get('level_1') or "").strip() or None,
+        linworks_title=(mapping_data.get('linworks_title') or "").strip() or None,
+        comment=(mapping_data.get('comment') or "").strip() or None,
+        comment_by_finance=(mapping_data.get('comment_by_finance') or "").strip() or None,
+    )
+
+    # Now fetch the object to update modified_by fields
+    print("QS: ", qs)
+    obj = qs.first()  # this gives the actual model instance
+    print("obj qs first: ", obj)
+
+    if obj:
+        if mapping_data.get('modified_by') and mapping_data.get('modified_by').strip():
+            obj.modified_by = mapping_data.get('modified_by')
+
+        if mapping_data.get('modified_by_finance') and mapping_data.get('modified_by_finance').strip():
+            obj.modified_by_finance = mapping_data.get('modified_by_finance')
+
+        if mapping_data.get('modified_by_admin') and mapping_data.get('modified_by_admin').strip():
+            obj.modified_by_admin = mapping_data.get('modified_by_admin')
+
+        obj.save()
     # ------------------------------------------------------------------
     # STEP 2: Fill missing parent_sku for all rows with the same im_sku
     # ------------------------------------------------------------------
@@ -1353,57 +1392,31 @@ def updateMapping_helper(mapping_data, id):
             print("No valid modified_by field found, skipping update for im_sku:", im_sku_value)
     
     # ------------------------------------------------------------------
-    # STEP 3: Sync level_1 and linworks_title across all records with same im_sku
+    # STEP 3: Check if im_sku exists and fill in level_1, linworks_title from a reference
     # ------------------------------------------------------------------
     matching_records = product_mapping.objects.filter(im_sku__iexact=im_sku_value)
     logger.info("Found %d records with im_sku = '%s'", matching_records.count(), im_sku_value)
+    print("Found %d records with im_sku = '%s'" % (matching_records.count(), im_sku_value))
     for record in matching_records:
         logger.info("Record id=%s | level_1='%s' | linworks_title='%s'",
                     record.id, record.level_1, record.linworks_title)
-    
-    # Find a record (could be current one or another) that has both level_1 and linworks_title
-    reference_record = None
-    
-    # First check if current record has both values
-    if obj.level_1 and obj.level_1.strip() != "" and obj.linworks_title and obj.linworks_title.strip() != "":
-        reference_record = obj
-        print(f"✓ Current record id={id} has complete data, will use it as reference")
-    else:
-        # Look for another record with both fields filled
-        print(f"Current record id={id} is incomplete, searching for reference...")
-        for record in matching_records.exclude(id=id):
-            has_level_1 = record.level_1 and record.level_1.strip() != ""
-            has_linworks_title = record.linworks_title and record.linworks_title.strip() != ""
-            
-            if has_level_1 and has_linworks_title:
-                reference_record = record
-                print(f"✓ FOUND reference record: id={record.id}")
-                break
-    
+    # Look for a record (excluding this one) that has both level_1 and linworks_title
+    reference_record = matching_records.filter(
+        Q(level_1__isnull=False) & ~Q(level_1__regex=r'^\s*$'),
+        Q(linworks_title__isnull=False) & ~Q(linworks_title__regex=r'^\s*$')
+    ).first()
+    print("reference record: ", reference_record)
     if reference_record:
-        logger.info("Using reference record id=%s to sync fields across all records with im_sku=%s", 
-                    reference_record.id, im_sku_value)
-        
-        # Update ALL records with this im_sku (including current one if it's empty)
-        records_to_update = []
-        for record in matching_records:
-            needs_update = False
-            if not record.level_1 or record.level_1.strip() == "":
-                record.level_1 = reference_record.level_1
-                needs_update = True
-            if not record.linworks_title or record.linworks_title.strip() == "":
-                record.linworks_title = reference_record.linworks_title
-                needs_update = True
-            
-            if needs_update:
-                records_to_update.append(record)
-        
-        if records_to_update:
-            product_mapping.objects.bulk_update(records_to_update, ['level_1', 'linworks_title'])
-            logger.info("Successfully synced %d records with level_1='%s' and linworks_title='%s'",
-                       len(records_to_update), reference_record.level_1, reference_record.linworks_title)
-            # Refresh obj from database to get updated values
-            obj.refresh_from_db()
+        logger.info("Using reference record id=%s to fill missing fields.", reference_record.id)
+        updated_fields = {}
+        if not obj.level_1 or obj.level_1.strip() == "":
+            updated_fields['level_1'] = reference_record.level_1
+        if not obj.linworks_title or obj.linworks_title.strip() == "":
+            updated_fields['linworks_title'] = reference_record.linworks_title
+        if updated_fields:
+            for key, value in updated_fields.items():
+                setattr(obj, key, value)
+            obj.save()
     else:
         logger.warning("No valid reference record found for im_sku = '%s'", im_sku_value)
     # ------------------------------------------------------------------
@@ -1518,7 +1531,7 @@ def updateMapping_helper(mapping_data, id):
         'comment_by_finance': obj.comment_by_finance,
         'message': message,
     }
-    return response_data, created
+    return response_data
    
 
 class BulkUpdateMapping(APIView):
@@ -1659,9 +1672,9 @@ class BulkUpdateMapping(APIView):
                     'comment_by_finance': row.get('Comment by Finance') if dept == 'FINANCE' else None,
                 }
                 print("Helper mapping data: ", helper_mapping_data)
-                response_data, created = updateMapping_helper(helper_mapping_data, row['ID'])
+                response_data = updateMapping_helper(helper_mapping_data, row['ID'])
                 print("Response data: ", response_data)
-                print("Created: ", created)
+                # print("Created: ", created)
 
             return Response({"message": "Bulk update successful."}, status=status.HTTP_200_OK)
 
