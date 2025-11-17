@@ -1050,13 +1050,37 @@ LEFT JOIN LatestTitle lt
                 # First, lookup using the SKU as is.
                 mapping_record = mapping_lookup.get((sku, region))
                 if mapping_record:
-                    record["im_sku"] = mapping_record.get("im_sku").strip() if mapping_record.get("im_sku") else mapping_record.get("im_sku")
-                    record["sales_channel"] = mapping_record.get("sales_channel")
-                    record["level_1"] = mapping_record.get("level_1").strip() if mapping_record.get("level_1") else mapping_record.get("level_1")
-                    record["linworks_title"] = mapping_record.get("linworks_title").strip() if mapping_record.get("linworks_title") else mapping_record.get("linworks_title")
-                    record["parent_sku"] = mapping_record.get("parent_sku").strip() if mapping_record.get("parent_sku") else mapping_record.get("parent_sku")
-                    record["modified_by"] = mapping_record.get("modified_by")
-                    record["comment"] = mapping_record.get("comment")
+                    # Only update im_sku if current value is empty
+                    if not record.get("im_sku") or (isinstance(record.get("im_sku"), str) and record["im_sku"].strip() == ""):
+                        record["im_sku"] = mapping_record.get("im_sku").strip() if mapping_record.get("im_sku") else mapping_record.get("im_sku")
+                    
+                    # Only update sales_channel if current value is empty
+                    if not record.get("sales_channel") or (isinstance(record.get("sales_channel"), str) and record["sales_channel"].strip() == ""):
+                        record["sales_channel"] = mapping_record.get("sales_channel")
+                    
+                    # Only update level_1 if current value is empty AND lookup has a non-empty value
+                    lookup_level_1 = mapping_record.get("level_1")
+                    if lookup_level_1 and str(lookup_level_1).strip() != "":
+                        if not record.get("level_1") or (isinstance(record.get("level_1"), str) and record["level_1"].strip() == ""):
+                            record["level_1"] = lookup_level_1.strip() if isinstance(lookup_level_1, str) else lookup_level_1
+                    
+                    # Only update linworks_title if current value is empty AND lookup has a non-empty value
+                    lookup_linworks_title = mapping_record.get("linworks_title")
+                    if lookup_linworks_title and str(lookup_linworks_title).strip() != "":
+                        if not record.get("linworks_title") or (isinstance(record.get("linworks_title"), str) and record["linworks_title"].strip() == ""):
+                            record["linworks_title"] = lookup_linworks_title.strip() if isinstance(lookup_linworks_title, str) else lookup_linworks_title
+                    
+                    # Only update parent_sku if current value is empty
+                    lookup_parent_sku = mapping_record.get("parent_sku")
+                    if lookup_parent_sku and str(lookup_parent_sku).strip() != "":
+                        if not record.get("parent_sku") or (isinstance(record.get("parent_sku"), str) and record["parent_sku"].strip() == ""):
+                            record["parent_sku"] = lookup_parent_sku.strip() if isinstance(lookup_parent_sku, str) else lookup_parent_sku
+                    
+                    # Always update metadata fields (modified_by, comment)
+                    if mapping_record.get("modified_by"):
+                        record["modified_by"] = mapping_record.get("modified_by")
+                    if mapping_record.get("comment"):
+                        record["comment"] = mapping_record.get("comment")
 
                 # Then, form the alternate SKU: if it starts with "M-", remove it; otherwise, add "M-"
                 if sku.startswith("M-"):
@@ -1067,14 +1091,37 @@ LEFT JOIN LatestTitle lt
                 # Lookup using the alternate SKU
                 mapping_record_alt = mapping_lookup.get((alternate_sku, region))
                 if mapping_record_alt:
-                    # Overwrite mapping fields with the alternate record if found
-                    record["im_sku"] = mapping_record_alt.get("im_sku").strip() if mapping_record_alt.get("im_sku") else mapping_record_alt.get("im_sku")
-                    record["sales_channel"] = mapping_record_alt.get("sales_channel")
-                    record["level_1"] = mapping_record_alt.get("level_1").strip() if mapping_record_alt.get("level_1") else mapping_record_alt.get("level_1")
-                    record["parent_sku"] = mapping_record_alt.get("parent_sku").strip() if mapping_record_alt.get("parent_sku") else mapping_record_alt.get("parent_sku")
-                    record["linworks_title"] = mapping_record_alt.get("linworks_title").strip() if mapping_record_alt.get("linworks_title") else mapping_record_alt.get("linworks_title")
-                    record["modified_by"] = mapping_record_alt.get("modified_by")
-                    record["comment"] = mapping_record_alt.get("comment")
+                    # Only update im_sku if current value is empty
+                    if not record.get("im_sku") or (isinstance(record.get("im_sku"), str) and record["im_sku"].strip() == ""):
+                        record["im_sku"] = mapping_record_alt.get("im_sku").strip() if mapping_record_alt.get("im_sku") else mapping_record_alt.get("im_sku")
+                    
+                    # Only update sales_channel if current value is empty
+                    if not record.get("sales_channel") or (isinstance(record.get("sales_channel"), str) and record["sales_channel"].strip() == ""):
+                        record["sales_channel"] = mapping_record_alt.get("sales_channel")
+                    
+                    # Only update level_1 if current value is empty AND lookup has a non-empty value
+                    lookup_level_1_alt = mapping_record_alt.get("level_1")
+                    if lookup_level_1_alt and str(lookup_level_1_alt).strip() != "":
+                        if not record.get("level_1") or (isinstance(record.get("level_1"), str) and record["level_1"].strip() == ""):
+                            record["level_1"] = lookup_level_1_alt.strip() if isinstance(lookup_level_1_alt, str) else lookup_level_1_alt
+                    
+                    # Only update parent_sku if current value is empty
+                    lookup_parent_sku_alt = mapping_record_alt.get("parent_sku")
+                    if lookup_parent_sku_alt and str(lookup_parent_sku_alt).strip() != "":
+                        if not record.get("parent_sku") or (isinstance(record.get("parent_sku"), str) and record["parent_sku"].strip() == ""):
+                            record["parent_sku"] = lookup_parent_sku_alt.strip() if isinstance(lookup_parent_sku_alt, str) else lookup_parent_sku_alt
+                    
+                    # Only update linworks_title if current value is empty AND lookup has a non-empty value
+                    lookup_linworks_title_alt = mapping_record_alt.get("linworks_title")
+                    if lookup_linworks_title_alt and str(lookup_linworks_title_alt).strip() != "":
+                        if not record.get("linworks_title") or (isinstance(record.get("linworks_title"), str) and record["linworks_title"].strip() == ""):
+                            record["linworks_title"] = lookup_linworks_title_alt.strip() if isinstance(lookup_linworks_title_alt, str) else lookup_linworks_title_alt
+                    
+                    # Always update metadata fields (modified_by, comment)
+                    if mapping_record_alt.get("modified_by"):
+                        record["modified_by"] = mapping_record_alt.get("modified_by")
+                    if mapping_record_alt.get("comment"):
+                        record["comment"] = mapping_record_alt.get("comment")
             
             # 5. Normalize missing string fields: keep them as empty strings instead of None/NaN/'nan'
             #    This avoids returning/saving None for optional text fields when data isn't available.
