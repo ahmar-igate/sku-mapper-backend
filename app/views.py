@@ -1037,11 +1037,25 @@ LEFT JOIN LatestTitle lt
             # Step 3: Convert to dict
             joined_data = joined_data_df.to_dict('records')
             
+            # Helper function to check if im_sku is truly filled (not None, empty, or string 'None'/'nan'/'null')
+            def has_valid_im_sku(im_sku_value):
+                if im_sku_value is None or im_sku_value == "":
+                    return False
+                if isinstance(im_sku_value, str) and im_sku_value.strip().lower() in ('none', 'nan', 'null', ''):
+                    return False
+                return True
+            
             mapping_lookup = {
                 (record["marketplace_sku"], record["region"]): record
                 for record in mapping_data
-                if record["im_sku"] is not None
+                if has_valid_im_sku(record["im_sku"])
             }
+            # mapping_lookup_just_marketplace = {
+            #     (record["marketplace_sku"]): record
+            #     for record in mapping_data
+            #     if record["im_sku"] not in [None, ""]
+
+            # }
 
             for record in joined_data:
                 sku = record["marketplace_sku"]
@@ -1050,8 +1064,17 @@ LEFT JOIN LatestTitle lt
                 # First, lookup using the SKU as is.
                 mapping_record = mapping_lookup.get((sku, region))
                 if mapping_record:
-                    # Only update im_sku if current value is empty
-                    if not record.get("im_sku") or (isinstance(record.get("im_sku"), str) and record["im_sku"].strip() == ""):
+                    # Only update im_sku if current value is empty (including string 'None', 'nan', 'null')
+                    current_im_sku = record.get("im_sku")
+                    is_empty = (
+                        current_im_sku is None or 
+                        current_im_sku == "" or 
+                        (isinstance(current_im_sku, str) and (
+                            current_im_sku.strip() == "" or 
+                            current_im_sku.strip().lower() in ('none', 'nan', 'null')
+                        ))
+                    )
+                    if is_empty:
                         record["im_sku"] = mapping_record.get("im_sku").strip() if mapping_record.get("im_sku") else mapping_record.get("im_sku")
                     
                     # Only update sales_channel if current value is empty
@@ -1081,6 +1104,8 @@ LEFT JOIN LatestTitle lt
                         record["modified_by"] = mapping_record.get("modified_by")
                     if mapping_record.get("comment"):
                         record["comment"] = mapping_record.get("comment")
+                        
+                
 
                 # Then, form the alternate SKU: if it starts with "M-", remove it; otherwise, add "M-"
                 if sku.startswith("M-"):
@@ -1091,8 +1116,17 @@ LEFT JOIN LatestTitle lt
                 # Lookup using the alternate SKU
                 mapping_record_alt = mapping_lookup.get((alternate_sku, region))
                 if mapping_record_alt:
-                    # Only update im_sku if current value is empty
-                    if not record.get("im_sku") or (isinstance(record.get("im_sku"), str) and record["im_sku"].strip() == ""):
+                    # Only update im_sku if current value is empty (including string 'None', 'nan', 'null')
+                    current_im_sku_alt = record.get("im_sku")
+                    is_empty_alt = (
+                        current_im_sku_alt is None or 
+                        current_im_sku_alt == "" or 
+                        (isinstance(current_im_sku_alt, str) and (
+                            current_im_sku_alt.strip() == "" or 
+                            current_im_sku_alt.strip().lower() in ('none', 'nan', 'null')
+                        ))
+                    )
+                    if is_empty_alt:
                         record["im_sku"] = mapping_record_alt.get("im_sku").strip() if mapping_record_alt.get("im_sku") else mapping_record_alt.get("im_sku")
                     
                     # Only update sales_channel if current value is empty
@@ -1122,6 +1156,107 @@ LEFT JOIN LatestTitle lt
                         record["modified_by"] = mapping_record_alt.get("modified_by")
                     if mapping_record_alt.get("comment"):
                         record["comment"] = mapping_record_alt.get("comment")
+            
+            # Check if there are any unfilled im_sku values before running the second phase
+            # Helper function to check if im_sku is empty
+            def is_im_sku_empty(value):
+                return (
+                    value is None or 
+                    value == "" or 
+                    (isinstance(value, str) and (
+                        value.strip() == "" or 
+                        value.strip().lower() in ('none', 'nan', 'null')
+                    ))
+                )
+            
+            unfilled_count = sum(1 for record in joined_data if is_im_sku_empty(record.get("im_sku")))
+            print(f"📊 After first phase: {unfilled_count} records still have unfilled im_sku")
+            
+            # Only run second phase (marketplace-only lookup) if there are unfilled im_sku values
+            if unfilled_count > 0:
+                # Build a comprehensive lookup that includes both the original SKU and its M- variant
+                # This ensures that if HYP-IS2B-L-US has im_sku, we can find it when looking up M-HYP-IS2B-L-US and vice versa
+                mapping_lookup_just_marketplace = {}
+                for record in mapping_data:
+                    if has_valid_im_sku(record["im_sku"]):
+                        sku = record["marketplace_sku"]
+                        # Add the record with its original SKU (keep the best one if duplicate)
+                        if sku not in mapping_lookup_just_marketplace:
+                            mapping_lookup_just_marketplace[sku] = record
+                        
+                        # Also add it with the alternate SKU (with or without M- prefix)
+                        if sku.startswith("M-"):
+                            alternate_sku = sku[2:]
+                        else:
+                            alternate_sku = "M-" + sku
+                        
+                        if alternate_sku not in mapping_lookup_just_marketplace:
+                            mapping_lookup_just_marketplace[alternate_sku] = record
+                
+                print(f"✅ Total entries in mapping_lookup_just_marketplace: {len(mapping_lookup_just_marketplace)}")
+                # Debug: Check if our test SKUs are in the lookup
+                if 'HYP-IS2B-L-US' in mapping_lookup_just_marketplace:
+                    print(f"✅ Found HYP-IS2B-L-US with im_sku: {mapping_lookup_just_marketplace['HYP-IS2B-L-US'].get('im_sku')}")
+                if 'M-HYP-IS2B-L-US' in mapping_lookup_just_marketplace:
+                    print(f"✅ Found M-HYP-IS2B-L-US with im_sku: {mapping_lookup_just_marketplace['M-HYP-IS2B-L-US'].get('im_sku')}")
+                            
+                # Fill im_sku based on marketplace sku (handles both M- and non-M- variants)
+                filled_count = 0
+                for record in joined_data:
+                    sku = record["marketplace_sku"]
+                    original_im_sku = record.get("im_sku")
+                    
+                    # Debug specific SKUs to see their current state
+                    if sku in ['M-HYP-IS2B-L-US', 'HYP-IS2B-L-US']:
+                        print(f"🔍 Processing {sku}:")
+                        print(f"   Current im_sku: '{original_im_sku}' (type: {type(original_im_sku)})")
+                        print(f"   Is None: {original_im_sku is None}")
+                        print(f"   Is empty string: {original_im_sku == ''}")
+                        if isinstance(original_im_sku, str):
+                            print(f"   Stripped is empty: {original_im_sku.strip() == ''}")
+                    
+                    # Look up using the current SKU (will match both direct and alternate lookups)
+                    mapping_record_just_marketplace = mapping_lookup_just_marketplace.get(sku)
+                    if mapping_record_just_marketplace:
+                        # Check if im_sku is empty (None, empty string, whitespace only, or string 'None'/'nan')
+                        is_empty = (
+                            original_im_sku is None or 
+                            original_im_sku == "" or 
+                            (isinstance(original_im_sku, str) and (
+                                original_im_sku.strip() == "" or 
+                                original_im_sku.strip().lower() in ('none', 'nan', 'null')
+                            ))
+                        )
+                        
+                        if sku in ['M-HYP-IS2B-L-US', 'HYP-IS2B-L-US']:
+                            print(f"   Is empty check: {is_empty}")
+                            print(f"   Lookup has im_sku: {mapping_record_just_marketplace.get('im_sku')}")
+                        
+                        # Only update im_sku if current value is empty
+                        if is_empty:
+                            new_im_sku = mapping_record_just_marketplace.get("im_sku")
+                            if new_im_sku:
+                                record["im_sku"] = new_im_sku.strip() if isinstance(new_im_sku, str) else new_im_sku
+                                filled_count += 1
+                                # Debug specific SKU
+                                if sku in ['M-HYP-IS2B-L-US', 'HYP-IS2B-L-US']:
+                                    print(f"✅ Filled {sku}: '{original_im_sku}' -> '{record['im_sku']}'")
+                        else:
+                            if sku in ['M-HYP-IS2B-L-US', 'HYP-IS2B-L-US']:
+                                print(f"⏭️ Skipped {sku}: already has value '{original_im_sku}'")
+                        
+                        # Always update metadata fields (modified_by, comment)
+                        if mapping_record_just_marketplace.get("modified_by"):
+                            record["modified_by"] = mapping_record_just_marketplace.get("modified_by")
+                        if mapping_record_just_marketplace.get("comment"):
+                            record["comment"] = mapping_record_just_marketplace.get("comment")
+                
+                print(f"✅ Filled {filled_count} im_sku values using marketplace SKU lookup")
+            else:
+                print(f"⏭️ Skipping second phase: all im_sku values already filled")
+                    
+                
+                
             
             # 5. Normalize missing string fields: keep them as empty strings instead of None/NaN/'nan'
             #    This avoids returning/saving None for optional text fields when data isn't available.
@@ -1265,22 +1400,42 @@ LEFT JOIN LatestTitle lt
 
 class UpdateMapping(APIView):
     def put(self, request, id, *args, **kwargs):
+        print("=" * 80)
+        print(f"🔵 UpdateMapping endpoint HIT! ID: {id}")
+        print("=" * 80)
         try:
+            print("📥 Attempting to access request.data...")
             mapping_data = request.data
+            print("✅ request.data accessed successfully")
+            print("📋 Mapping data: ", mapping_data)
+            logger.info("Updating mapping for id %s with data: %s", id, mapping_data)
+            
             # Disallow updates for read-only users
             dept = request.data.get('department') if isinstance(request.data, dict) else None
+            print(f"👤 Department: {dept}")
             if dept and str(dept).upper() == 'READ_ONLY':
+                print("⛔ Read-only user blocked")
                 return Response({'message': 'Read-only users cannot update mappings.'}, status=status.HTTP_403_FORBIDDEN)
+            
             logger.info("Received mapping data for id %s: %s", id, mapping_data)
-            print("Received mapping data for id %s: %s", id, mapping_data)
-            response_data, created = updateMapping_helper(mapping_data, id)
+            print(f"🚀 Calling updateMapping_helper for id {id}")
+            response_data = updateMapping_helper(mapping_data, id)
+            print("✅ updateMapping_helper completed successfully")
+            print(f"📤 Response data: {response_data}")
 
-            status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-            return Response(response_data, status=status_code)
+            return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
+            print("❌" * 40)
+            print(f"💥 EXCEPTION CAUGHT: {type(e).__name__}")
+            print(f"💥 Error message: {str(e)}")
+            print(f"💥 Error details: {repr(e)}")
+            import traceback
+            print("📜 Full traceback:")
+            traceback.print_exc()
+            print("❌" * 40)
             logger.error("Unexpected error when saving mapping: %s", e, exc_info=True)
             return Response(
-                {"error": "An unexpected error occurred."},
+                {"error": f"An unexpected error occurred: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
