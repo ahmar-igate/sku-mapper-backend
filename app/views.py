@@ -737,105 +737,7 @@ class New_Mapping(APIView):
                 "amazon_title" ,     # additional field
             ))
             
-            # 2. Retrieve Amazon data from the secondary database.
-            # query = """
-            # select
-            #     distinct SellerSKU, ASIN, Region, SalesChannel
-            #     from(
-            #             select SellerSKU, ASIN, Region, SalesChannel from dbo.amazon_api_de
-            #             where OrderStatus = 'Shipped' and SalesChannel != 'Non-Amazon'
-            #             union 
-            #             select SellerSKU, ASIN, Region, SalesChannel from dbo.amazon_api_es
-            #             where OrderStatus = 'Shipped' and SalesChannel != 'Non-Amazon'
-            #             union 
-            #             select SellerSKU, ASIN, Region, SalesChannel from dbo.amazon_api_it
-            #             where OrderStatus = 'Shipped' and SalesChannel != 'Non-Amazon'
-            #             union 
-            #             select SellerSKU, ASIN, Region, SalesChannel from dbo.amazon_api_uk
-            #             where OrderStatus = 'Shipped' and SalesChannel != 'Non-Amazon'
-            #     ) as a;
-            # """
-#             query = """
-# WITH CombinedData AS (
-#     SELECT
-#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))) AS SellerSKU,
-#         ASIN,
-#         Region,
-#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) AS SalesChannel,
-#         PurchaseDate_Materialized AS PurchaseDate,
-#         Title
-#     FROM dbo.amazon_api_de
-#     WHERE OrderStatus_Optimized = 'Shipped' 
-#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
-    
-#     UNION ALL
-    
-#     SELECT
-#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-#         ASIN,
-#         Region,
-#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
-#         PurchaseDate_Materialized,
-#         Title
-#     FROM dbo.amazon_api_es
-#     WHERE OrderStatus_Optimized = 'Shipped' 
-#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
-    
-#     UNION ALL
-    
-#     SELECT
-#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-#         ASIN,
-#         Region,
-#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
-#         PurchaseDate_Materialized,
-#         Title
-#     FROM dbo.amazon_api_it
-#     WHERE OrderStatus_Optimized = 'Shipped' 
-#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
-    
-#     UNION ALL
-    
-#     SELECT
-#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-#         ASIN,
-#         Region,
-#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
-#         PurchaseDate_Materialized,
-#         Title
-#     FROM dbo.amazon_api_uk
-#     WHERE OrderStatus_Optimized = 'Shipped' 
-#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
-# ),
-# DistinctSellers AS (
-#     SELECT DISTINCT SellerSKU, ASIN, Region, SalesChannel
-#     FROM CombinedData
-# ),
-# LatestTitle AS (
-#     SELECT
-#         SellerSKU,
-#         SalesChannel,
-#         PurchaseDate,
-#         Title,
-#         ROW_NUMBER() OVER (
-#             PARTITION BY SellerSKU, SalesChannel 
-#             ORDER BY PurchaseDate DESC
-#         ) AS rn
-#     FROM CombinedData
-# )
-# SELECT 
-#     ds.SellerSKU, 
-#     ds.ASIN, 
-#     ds.Region, 
-#     ds.SalesChannel,
-#     lt.PurchaseDate AS [Date], 
-#     lt.Title
-# FROM DistinctSellers ds
-# LEFT JOIN LatestTitle lt
-#     ON ds.SellerSKU = lt.SellerSKU 
-#     AND ds.SalesChannel = lt.SalesChannel
-#     AND lt.rn = 1;
-#             """
+
             query = """
 WITH CombinedData AS (
     SELECT
@@ -921,11 +823,12 @@ DistinctSellers AS (
 LatestTitle AS (
     SELECT
         SellerSKU,
+        ASIN,
         SalesChannel,
         PurchaseDate,
         Title,
         ROW_NUMBER() OVER (
-            PARTITION BY SellerSKU, SalesChannel
+            PARTITION BY SellerSKU, ASIN, SalesChannel
             ORDER BY PurchaseDate DESC
         ) AS rn
     FROM CombinedData
@@ -940,6 +843,7 @@ SELECT
 FROM DistinctSellers ds
 LEFT JOIN LatestTitle lt
     ON ds.SellerSKU = lt.SellerSKU
+    AND ds.ASIN = lt.ASIN
     AND ds.SalesChannel = lt.SalesChannel
     AND lt.rn = 1;
 """
@@ -958,7 +862,7 @@ LEFT JOIN LatestTitle lt
             # Convert to DataFrame and apply transformations on the 'SellerSKU' column.
             df_amazon = pd.DataFrame(amazon_data)
             # df_amazon = update_lin_categ_title_if_exists(df_amazon)
-            df_amazon.to_csv("amazon_data.csv", encoding='utf-8', index=False)
+            # df_amazon.to_csv("amazon_data.csv", encoding='utf-8', index=False)
             if not df_amazon.empty:
                 # Normalize SKU
                 df_amazon['SellerSKU'] = df_amazon['SellerSKU'].astype(str).str.strip().str.upper()
@@ -1006,6 +910,7 @@ LEFT JOIN LatestTitle lt
                     "linworks_title": mapping_record["linworks_title"] if mapping_record else None,
                     "modified_by": mapping_record["modified_by"] if mapping_record else None,
                     "comment": mapping_record["comment"] if mapping_record else None,
+                    # "date": amazon_record.get("Date"),  # ✅ Always use the latest date from Amazon query regardless of mapping record (use when you need to update date)
                     "date": mapping_record["date"] if mapping_record else amazon_record.get("Date"),
                     "amazon_title": mapping_record["amazon_title"] if mapping_record else amazon_record.get("Title"),
                 }
