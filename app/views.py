@@ -30,8 +30,8 @@ def update_im_sku(group):
     def base_sku(x):
         return x[:-1] if x.endswith('+') else x
 
-    # Create a temporary column with the base im_sku
-    group['base_im_sku'] = group['im_sku'].apply(lambda x: base_sku(x) if isinstance(x, str) and x != '' else x)
+    # Create a temporary column with the base im_sku (capitalized)
+    group['base_im_sku'] = group['im_sku'].apply(lambda x: base_sku(x.upper()) if isinstance(x, str) and x != '' else x)
     
     # Get unique non-empty base values from the group
     unique_bases = group.loc[group['base_im_sku'].notnull(), 'base_im_sku'].unique()
@@ -40,7 +40,7 @@ def update_im_sku(group):
     if len(unique_bases) == 1:
         base_val = unique_bases[0]
         # Check if any row in this group already has a plus appended
-        plus_present = group['im_sku'].apply(lambda x: isinstance(x, str) and x.endswith('+')).any()
+        plus_present = group['im_sku'].apply(lambda x: isinstance(x, str) and x.upper().endswith('+')).any()
         # Determine desired im_sku for the group
         desired = base_val + '+' if plus_present else base_val
         
@@ -48,16 +48,19 @@ def update_im_sku(group):
         # - If im_sku is empty, fill it with the desired im_sku.
         # - If im_sku equals the base (i.e. missing the plus) but desired includes a plus, update it.
         group['im_sku'] = group['im_sku'].apply(
-            lambda x: desired if (not isinstance(x, str)) or x == '' or x == base_val else x
+            lambda x: desired if (not isinstance(x, str)) or x == '' or x.upper() == base_val else x.upper() if isinstance(x, str) and x != '' else x
         )
+    else:
+        # If there are multiple unique bases or no bases, just capitalize existing values
+        group['im_sku'] = group['im_sku'].apply(lambda x: x.upper() if isinstance(x, str) and x != '' else x)
     
     # Remove the temporary column
     group = group.drop(columns=['base_im_sku'])
     return group
 
 def fill_parent_sku_base_on_im_sku(df):
-    # Strip whitespace from existing non-null parent_sku values
-    df['parent_sku'] = df['parent_sku'].apply(lambda x: x.strip() if isinstance(x, str) else x)
+    # Strip whitespace and capitalize from existing non-null parent_sku values
+    df['parent_sku'] = df['parent_sku'].apply(lambda x: x.strip().upper() if isinstance(x, str) and x.strip() else x)
     
     # Fill missing parent_sku values within each im_sku group
     df['parent_sku'] = df.groupby('im_sku')['parent_sku'].transform(lambda x: x.ffill().bfill())
@@ -382,7 +385,11 @@ def import_product_mapping_from_db(request):
 
             # Run the SQL query
             query_1 = f"""
-                SELECT DISTINCT SellerSKU, ASIN, Region, SalesChannel
+                SELECT DISTINCT 
+                    UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU, 
+                    UPPER(LTRIM(RTRIM(ASIN))) AS ASIN, 
+                    UPPER(LTRIM(RTRIM(Region))) AS Region, 
+                    UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel
                 FROM (
                     SELECT SellerSKU, ASIN, Region, SalesChannel 
                     FROM dbo.amazon_api_{region}
@@ -669,9 +676,9 @@ class Dashboard(APIView):
 def update_lin_categ_title_if_exists(df):
     print("🔄 Starting update of level_1 and linworks_title based on im_sku...")
 
-    # Step 0: Clean im_sku values
-    df['im_sku'] = df['im_sku'].astype(str).str.strip()
-    print("✅ Cleaned im_sku values.")
+    # Step 0: Clean and capitalize im_sku values
+    df['im_sku'] = df['im_sku'].astype(str).str.strip().str.upper()
+    print("✅ Cleaned and capitalized im_sku values.")
 
     # Step 1: Filter rows with valid data
     valid_rows = df[
@@ -681,8 +688,10 @@ def update_lin_categ_title_if_exists(df):
     ]
     print(f"✅ Found {len(valid_rows)} valid rows with complete im_sku, level_1, and linworks_title.")
 
-    # Step 2: Group and create mapping
-    valid_im_skus = valid_rows.groupby('im_sku').agg({
+    # Step 2: Group and create mapping (capitalize level_1)
+    valid_im_skus = valid_rows.copy()
+    valid_im_skus['level_1'] = valid_im_skus['level_1'].astype(str).str.strip().str.upper()
+    valid_im_skus = valid_im_skus.groupby('im_sku').agg({
         'level_1': 'first',
         'linworks_title': 'first'
     }).reset_index()
@@ -693,14 +702,15 @@ def update_lin_categ_title_if_exists(df):
     im_sku_to_category = dict(zip(valid_im_skus['im_sku'], valid_im_skus['level_1']))
     im_sku_to_title = dict(zip(valid_im_skus['im_sku'], valid_im_skus['linworks_title']))
 
-    # Step 3: Fill missing values
+    # Step 3: Fill missing values (capitalize level_1)
     def fill_level_1(row):
         if pd.isna(row['level_1']) or str(row['level_1']).strip() == '':
             filled = im_sku_to_category.get(row['im_sku'], row['level_1'])
             if filled != row['level_1']:
                 print(f"✏️ Filling level_1 for im_sku '{row['im_sku']}' with '{filled}'")
             return filled
-        return row['level_1']
+        # Always capitalize level_1 even if it already has a value
+        return str(row['level_1']).strip().upper() if str(row['level_1']).strip() else row['level_1']
 
     def fill_linworks_title(row):
         if pd.isna(row['linworks_title']) or str(row['linworks_title']).strip() == '':
@@ -742,9 +752,9 @@ class New_Mapping(APIView):
 WITH CombinedData AS (
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))) AS SellerSKU,
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) AS SalesChannel,
+        UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
+        UPPER(LTRIM(RTRIM(Region))) AS Region,
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))) AS SalesChannel,
         PurchaseDate_Materialized AS PurchaseDate,
         Title
     FROM dbo.amazon_api_de
@@ -755,9 +765,9 @@ WITH CombinedData AS (
 
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        UPPER(LTRIM(RTRIM(ASIN))),
+        UPPER(LTRIM(RTRIM(Region))),
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))),
         PurchaseDate_Materialized,
         Title
     FROM dbo.amazon_api_es
@@ -768,9 +778,9 @@ WITH CombinedData AS (
 
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        UPPER(LTRIM(RTRIM(ASIN))),
+        UPPER(LTRIM(RTRIM(Region))),
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))),
         PurchaseDate_Materialized,
         Title
     FROM dbo.amazon_api_it
@@ -781,9 +791,9 @@ WITH CombinedData AS (
 
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        UPPER(LTRIM(RTRIM(ASIN))),
+        UPPER(LTRIM(RTRIM(Region))),
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))),
         PurchaseDate_Materialized,
         Title
     FROM dbo.amazon_api_uk
@@ -794,9 +804,9 @@ WITH CombinedData AS (
 
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        UPPER(LTRIM(RTRIM(ASIN))),
+        UPPER(LTRIM(RTRIM(Region))),
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))),
         PurchaseDate_Materialized,
         Title
     FROM dbo.amazon_api_usa
@@ -807,9 +817,9 @@ WITH CombinedData AS (
 
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+        UPPER(LTRIM(RTRIM(ASIN))),
+        UPPER(LTRIM(RTRIM(Region))),
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))),
         PurchaseDate_Materialized,
         Title
     FROM dbo.amazon_api_ca
@@ -903,10 +913,10 @@ LEFT JOIN LatestTitle lt
                     "marketplace_sku": amazon_record["SellerSKU"],
                     "asin": amazon_record["ASIN"],
                     "region": amazon_record["Region"],
-                    "im_sku": mapping_record["im_sku"] if mapping_record else None,
+                    "im_sku": mapping_record["im_sku"].upper() if mapping_record and mapping_record.get("im_sku") and str(mapping_record["im_sku"]).strip() else None,
                     "sales_channel": mapping_record["sales_channel"] if mapping_record else amazon_record.get("SalesChannel"),
-                    "level_1": mapping_record["level_1"] if mapping_record else None,
-                    "parent_sku": mapping_record["parent_sku"] if mapping_record else None,
+                    "level_1": mapping_record["level_1"].upper() if mapping_record and mapping_record.get("level_1") and str(mapping_record["level_1"]).strip() else None,
+                    "parent_sku": mapping_record["parent_sku"].upper() if mapping_record and mapping_record.get("parent_sku") and str(mapping_record["parent_sku"]).strip() else None,
                     "linworks_title": mapping_record["linworks_title"] if mapping_record else None,
                     "modified_by": mapping_record["modified_by"] if mapping_record else None,
                     "comment": mapping_record["comment"] if mapping_record else None,
@@ -980,7 +990,8 @@ LEFT JOIN LatestTitle lt
                         ))
                     )
                     if is_empty:
-                        record["im_sku"] = mapping_record.get("im_sku").strip() if mapping_record.get("im_sku") else mapping_record.get("im_sku")
+                        im_sku_value = mapping_record.get("im_sku")
+                        record["im_sku"] = im_sku_value.strip().upper() if im_sku_value and str(im_sku_value).strip() else im_sku_value
                     
                     # Only update sales_channel if current value is empty
                     if not record.get("sales_channel") or (isinstance(record.get("sales_channel"), str) and record["sales_channel"].strip() == ""):
@@ -990,7 +1001,7 @@ LEFT JOIN LatestTitle lt
                     lookup_level_1 = mapping_record.get("level_1")
                     if lookup_level_1 and str(lookup_level_1).strip() != "":
                         if not record.get("level_1") or (isinstance(record.get("level_1"), str) and record["level_1"].strip() == ""):
-                            record["level_1"] = lookup_level_1.strip() if isinstance(lookup_level_1, str) else lookup_level_1
+                            record["level_1"] = lookup_level_1.strip().upper() if isinstance(lookup_level_1, str) else lookup_level_1
                     
                     # Only update linworks_title if current value is empty AND lookup has a non-empty value
                     lookup_linworks_title = mapping_record.get("linworks_title")
@@ -1002,7 +1013,7 @@ LEFT JOIN LatestTitle lt
                     lookup_parent_sku = mapping_record.get("parent_sku")
                     if lookup_parent_sku and str(lookup_parent_sku).strip() != "":
                         if not record.get("parent_sku") or (isinstance(record.get("parent_sku"), str) and record["parent_sku"].strip() == ""):
-                            record["parent_sku"] = lookup_parent_sku.strip() if isinstance(lookup_parent_sku, str) else lookup_parent_sku
+                            record["parent_sku"] = lookup_parent_sku.strip().upper() if isinstance(lookup_parent_sku, str) else lookup_parent_sku
                     
                     # Always update metadata fields (modified_by, comment)
                     if mapping_record.get("modified_by"):
@@ -1032,7 +1043,8 @@ LEFT JOIN LatestTitle lt
                         ))
                     )
                     if is_empty_alt:
-                        record["im_sku"] = mapping_record_alt.get("im_sku").strip() if mapping_record_alt.get("im_sku") else mapping_record_alt.get("im_sku")
+                        im_sku_value_alt = mapping_record_alt.get("im_sku")
+                        record["im_sku"] = im_sku_value_alt.strip().upper() if im_sku_value_alt and str(im_sku_value_alt).strip() else im_sku_value_alt
                     
                     # Only update sales_channel if current value is empty
                     if not record.get("sales_channel") or (isinstance(record.get("sales_channel"), str) and record["sales_channel"].strip() == ""):
@@ -1042,13 +1054,13 @@ LEFT JOIN LatestTitle lt
                     lookup_level_1_alt = mapping_record_alt.get("level_1")
                     if lookup_level_1_alt and str(lookup_level_1_alt).strip() != "":
                         if not record.get("level_1") or (isinstance(record.get("level_1"), str) and record["level_1"].strip() == ""):
-                            record["level_1"] = lookup_level_1_alt.strip() if isinstance(lookup_level_1_alt, str) else lookup_level_1_alt
+                            record["level_1"] = lookup_level_1_alt.strip().upper() if isinstance(lookup_level_1_alt, str) else lookup_level_1_alt
                     
                     # Only update parent_sku if current value is empty
                     lookup_parent_sku_alt = mapping_record_alt.get("parent_sku")
                     if lookup_parent_sku_alt and str(lookup_parent_sku_alt).strip() != "":
                         if not record.get("parent_sku") or (isinstance(record.get("parent_sku"), str) and record["parent_sku"].strip() == ""):
-                            record["parent_sku"] = lookup_parent_sku_alt.strip() if isinstance(lookup_parent_sku_alt, str) else lookup_parent_sku_alt
+                            record["parent_sku"] = lookup_parent_sku_alt.strip().upper() if isinstance(lookup_parent_sku_alt, str) else lookup_parent_sku_alt
                     
                     # Only update linworks_title if current value is empty AND lookup has a non-empty value
                     lookup_linworks_title_alt = mapping_record_alt.get("linworks_title")
@@ -1141,7 +1153,7 @@ LEFT JOIN LatestTitle lt
                         if is_empty:
                             new_im_sku = mapping_record_just_marketplace.get("im_sku")
                             if new_im_sku:
-                                record["im_sku"] = new_im_sku.strip() if isinstance(new_im_sku, str) else new_im_sku
+                                record["im_sku"] = new_im_sku.strip().upper() if isinstance(new_im_sku, str) and new_im_sku.strip() else new_im_sku
                                 filled_count += 1
                                 # Debug specific SKU
                                 if sku in ['M-HYP-IS2B-L-US', 'HYP-IS2B-L-US']:
@@ -1394,13 +1406,13 @@ def updateMapping_helper(mapping_data, id):
     print("ID: ", id)
     qs = product_mapping.objects.filter(id=id)
     qs.update(
-        marketplace_sku=(mapping_data.get('marketplace_sku') or "").strip() or None,
-        asin=(mapping_data.get('asin') or "").strip() or None,
-        im_sku=(mapping_data.get('im_sku') or "").strip() or None,
-        parent_sku=incoming_parent_sku.strip() if incoming_parent_sku else "",
-        region=(mapping_data.get('region') or "").strip() or None,
-        sales_channel=(mapping_data.get('sales_channel') or "").strip() or None,
-        level_1=(mapping_data.get('level_1') or "").strip() or None,
+        marketplace_sku=(mapping_data.get('marketplace_sku') or "").strip().upper() if (mapping_data.get('marketplace_sku') or "").strip() else None,
+        asin=(mapping_data.get('asin') or "").strip().upper() if (mapping_data.get('asin') or "").strip() else None,
+        im_sku=(mapping_data.get('im_sku') or "").strip().upper() if (mapping_data.get('im_sku') or "").strip() else None,
+        parent_sku=incoming_parent_sku.strip().upper() if incoming_parent_sku and incoming_parent_sku.strip() else "",
+        region=(mapping_data.get('region') or "").strip().upper() if (mapping_data.get('region') or "").strip() else None,
+        sales_channel=(mapping_data.get('sales_channel') or "").strip().capitalize() if (mapping_data.get('sales_channel') or "").strip() else None,
+        level_1=(mapping_data.get('level_1') or "").strip().upper() if (mapping_data.get('level_1') or "").strip() else None,
         linworks_title=(mapping_data.get('linworks_title') or "").strip() or None,
         comment=(mapping_data.get('comment') or "").strip() or None,
         comment_by_finance=(mapping_data.get('comment_by_finance') or "").strip() or None,
@@ -1759,19 +1771,27 @@ class BulkUpdateMapping(APIView):
             
             for _, row in df.iterrows():
                 # Map CSV column names to the snake_case keys expected by updateMapping_helper
+                # Capitalize fields as needed
+                marketplace_sku_val = row.get('Marketplace SKU')
+                asin_val = row.get('ASIN')
+                im_sku_val = row.get('Linnworks SKU')
+                parent_sku_val = row.get('Parent SKU')
+                region_val = row.get('Region')
+                sales_channel_val = row.get('Sales Channel')
+                level_1_val = row.get('Linnworks Category')
+                
                 helper_mapping_data = {
                     'id': row['ID'],
                     'date': row.get('Date'),
-                    'marketplace_sku': row.get('Marketplace SKU'),
-                    'asin': row.get('ASIN'),
-                    'im_sku': row.get('Linnworks SKU'),
-                    'parent_sku': row.get('Parent SKU'),
-                    'region': row.get('Region'),
-                    'sales_channel': row.get('Sales Channel'),
-                    'level_1': row.get('Linnworks Category'),
+                    'marketplace_sku': marketplace_sku_val.strip().upper() if marketplace_sku_val and str(marketplace_sku_val).strip() else marketplace_sku_val,
+                    'asin': asin_val.strip().upper() if asin_val and str(asin_val).strip() else asin_val,
+                    'im_sku': im_sku_val.strip().upper() if im_sku_val and str(im_sku_val).strip() else im_sku_val,
+                    'parent_sku': parent_sku_val.strip().upper() if parent_sku_val and str(parent_sku_val).strip() else (parent_sku_val if parent_sku_val else ''),
+                    'region': region_val.strip().upper() if region_val and str(region_val).strip() else region_val,
+                    'sales_channel': sales_channel_val.strip().capitalize() if sales_channel_val and str(sales_channel_val).strip() else sales_channel_val,
+                    'level_1': level_1_val.strip().upper() if level_1_val and str(level_1_val).strip() else level_1_val,
                     'linworks_title': row.get('Linnworks Title'),
                     'amazon_title': row.get('Amazon Title'),
-                    'parent_sku': row.get('Parent SKU') if row.get('Parent SKU') else '',
                     'modified_by': row.get('Mapped By SCM') if dept == 'SCM' else None,
                     'modified_by_finance': row.get('Mapped By Finance') if dept == 'FINANCE' else None,
                     'modified_by_admin': row.get('Mapped By Admin') if dept == 'ADMIN' else None,
@@ -1896,13 +1916,13 @@ class SaveMapping(APIView):
             if not isinstance(row, dict):
                 continue
 
-            marketplace_sku = row.get('marketplace_sku')
-            region = row.get('region')
-            asin   = row.get('asin')
-            im_sku = row.get('im_sku')  # might be blank
-            parent_sku = row.get('parent_sku')
+            marketplace_sku = row.get('marketplace_sku', '').strip().upper() if row.get('marketplace_sku') and str(row.get('marketplace_sku')).strip() else row.get('marketplace_sku')
+            region = row.get('region', '').strip().upper() if row.get('region') and str(row.get('region')).strip() else row.get('region')
+            asin   = row.get('asin', '').strip().upper() if row.get('asin') and str(row.get('asin')).strip() else row.get('asin')
+            im_sku = row.get('im_sku', '').strip().upper() if row.get('im_sku') and str(row.get('im_sku')).strip() else row.get('im_sku')
+            parent_sku = row.get('parent_sku', '').strip().upper() if row.get('parent_sku') and str(row.get('parent_sku')).strip() else row.get('parent_sku')
             marketplace = row.get('marketplace')
-            level_1     = row.get('level_1')
+            level_1     = row.get('level_1', '').strip().upper() if row.get('level_1') and str(row.get('level_1')).strip() else row.get('level_1')
             level_2     = row.get('level_2')
             level_3     = row.get('level_3')
             level_4     = row.get('level_4')

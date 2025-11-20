@@ -88,6 +88,24 @@ class product_mapping(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
+    def save(self, *args, **kwargs):
+        # Capitalize specific fields before saving
+        if self.marketplace_sku and str(self.marketplace_sku).strip():
+            self.marketplace_sku = self.marketplace_sku.strip().upper()
+        if self.asin and str(self.asin).strip():
+            self.asin = self.asin.strip().upper()
+        if self.im_sku and str(self.im_sku).strip():
+            self.im_sku = self.im_sku.strip().upper()
+        if self.parent_sku and str(self.parent_sku).strip():
+            self.parent_sku = self.parent_sku.strip().upper()
+        if self.region and str(self.region).strip():
+            self.region = self.region.strip().upper()
+        if self.level_1 and str(self.level_1).strip():
+            self.level_1 = self.level_1.strip().upper()
+        if self.sales_channel and str(self.sales_channel).strip():
+            self.sales_channel = self.sales_channel.strip().capitalize()
+        super().save(*args, **kwargs)
+    
     def __str__(self):
         return f"MarketPlace SKU {self.marketplace_sku} in region {self.region}"
     
@@ -119,6 +137,22 @@ class new_product_mapping(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    def save(self, *args, **kwargs):
+        # Capitalize specific fields before saving
+        if self.marketplace_sku and str(self.marketplace_sku).strip():
+            self.marketplace_sku = self.marketplace_sku.strip().upper()
+        if self.asin and str(self.asin).strip():
+            self.asin = self.asin.strip().upper()
+        if self.im_sku and str(self.im_sku).strip():
+            self.im_sku = self.im_sku.strip().upper()
+        if self.parent_sku and str(self.parent_sku).strip():
+            self.parent_sku = self.parent_sku.strip().upper()
+        if self.region and str(self.region).strip():
+            self.region = self.region.strip().upper()
+        if self.level_1 and str(self.level_1).strip():
+            self.level_1 = self.level_1.strip().upper()
+        super().save(*args, **kwargs)
     
     def __str__(self):
         return f"MarketPlace SKU {self.marketplace_sku} in region {self.region}"
