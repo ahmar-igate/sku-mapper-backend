@@ -1615,6 +1615,8 @@ def updateMapping_helper(mapping_data, id):
             'modified_by': obj.modified_by.strip() if obj.modified_by else '',
             'modified_by_finance': obj.modified_by_finance.strip() if obj.modified_by_finance else '',
             'modified_by_admin': obj.modified_by_admin.strip() if obj.modified_by_admin else '',
+            'comment': obj.comment.strip() if obj.comment else '',
+            'comment_by_finance': obj.comment_by_finance.strip() if obj.comment_by_finance else '',
         }
     )
     # ------------------------------------------------------------------
@@ -1795,8 +1797,8 @@ class BulkUpdateMapping(APIView):
                     'modified_by': row.get('Mapped By SCM') if dept == 'SCM' else None,
                     'modified_by_finance': row.get('Mapped By Finance') if dept == 'FINANCE' else None,
                     'modified_by_admin': row.get('Mapped By Admin') if dept == 'ADMIN' else None,
-                    'comment': row.get('Comment by SCM') if dept == 'SCM' else None,
-                    'comment_by_finance': row.get('Comment by Finance') if dept == 'FINANCE' else None,
+                    'comment': row.get('Comment by SCM') if dept == 'SCM' or dept == 'ADMIN' else None,
+                    'comment_by_finance': row.get('Comment by Finance') if dept == 'FINANCE' or dept == 'ADMIN' else None,
                 }
                 print("Helper mapping data: ", helper_mapping_data)
                 response_data = updateMapping_helper(helper_mapping_data, row['ID'])
