@@ -365,15 +365,16 @@ LEFT JOIN LatestTitle lt
 def import_product_mapping_from_db(request):
     if request.method == "GET":
         try:
-            region = "usa"
+            # region = "usa"
             # Get existing mapping data
             mapping_data_qs = product_mapping.objects.using('default').filter(
-                region__iexact='us'
+                region__in=['US', 'CA']
             ).filter(
                 Q(im_sku__isnull=True) | Q(im_sku=''),
                 Q(linworks_title__isnull=True) | Q(linworks_title=''),
                 Q(level_1__isnull=True) | Q(level_1=''),
             )
+
 
             # Convert existing mappings to DataFrame
             serializer = ProductMappingSerializer(mapping_data_qs, many=True)
@@ -382,21 +383,52 @@ def import_product_mapping_from_db(request):
             # Handle case where df might be empty so that it doesn’t crash when df_existing is empty. It gives pandas a correctly shaped empty DataFrame to work with
             if df_existing.empty:
                 df_existing = pd.DataFrame(columns=["marketplace_sku", "asin", "region", "sales_channel"])
+                
+            
+            regions = ["US", "CA"]  
 
-            # Run the SQL query
-            query_1 = f"""
-                SELECT DISTINCT 
-                    UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU, 
-                    UPPER(LTRIM(RTRIM(ASIN))) AS ASIN, 
-                    UPPER(LTRIM(RTRIM(Region))) AS Region, 
-                    UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel
-                FROM (
-                    SELECT SellerSKU, ASIN, Region, SalesChannel 
-                    FROM dbo.amazon_api_{region}
-                    WHERE OrderStatus = 'Shipped' 
+            allowed_regions = ["US", "CA"]
+            valid = [r for r in regions if r in allowed_regions]
+
+            if not valid:
+                raise ValueError("Invalid regions")
+
+            union_queries = []
+
+            for r in valid:
+                union_queries.append(f"""
+                    SELECT SellerSKU, ASIN, Region, SalesChannel
+                    FROM dbo.amazon_api_{r}
+                    WHERE OrderStatus = 'Shipped'
                       AND SalesChannel != 'Non-Amazon'
+                """)
+
+            query_1 = f"""
+                SELECT DISTINCT
+                    UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU,
+                    UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
+                    UPPER(LTRIM(RTRIM(Region))) AS Region,
+                    UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) 
+                        + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel
+                FROM (
+                    {" UNION ALL ".join(union_queries)}
                 ) AS a;
             """
+
+            # # Run the SQL query
+            # query_1 = f"""
+            #     SELECT DISTINCT 
+            #         UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU, 
+            #         UPPER(LTRIM(RTRIM(ASIN))) AS ASIN, 
+            #         UPPER(LTRIM(RTRIM(Region))) AS Region, 
+            #         UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel
+            #     FROM (
+            #         SELECT SellerSKU, ASIN, Region, SalesChannel 
+            #         FROM dbo.amazon_api_{region}
+            #         WHERE OrderStatus = 'Shipped' 
+            #           AND SalesChannel != 'Non-Amazon'
+            #     ) AS a;
+            # """
             
             # Read data from product_mapping table
             with connections['secondary'].cursor() as cursor:
@@ -1441,42 +1473,50 @@ def updateMapping_helper(mapping_data, id):
     im_sku_value = (obj.im_sku or '').strip()
     if im_sku_value:
         print("incoming_parent_sku before update:", incoming_parent_sku)
-        # Update all records with the same im_sku to have the same parent_sku
-        # This will set parent_sku to None if incoming_parent_sku is None
-        product_mapping.objects.filter(im_sku__iexact=im_sku_value).update(parent_sku=incoming_parent_sku)
-        logger.info(
-            "Updated parent_sku=%s for all records with im_sku=%s",
-            incoming_parent_sku, im_sku_value
-        )
-        # Schedule the tertiary database update as a background task
-        try:
-            from threading import Thread
-            def update_tertiary_db():
-                try:
-                    with transaction.atomic(using='tertiary'):
-                        with connections['tertiary'].cursor() as cursor:
-                            update_sql = """
-                                UPDATE look_product_hierarchy_test
-                                SET parent_sku = %s
-                                WHERE im_sku = %s
-                            """
-                            cursor.execute(update_sql, [incoming_parent_sku, im_sku_value])
-                            logger.info(
-                                "Updated parent_sku=%s for all records with im_sku=%s in tertiary database",
-                                incoming_parent_sku, im_sku_value
-                            )
-                except Exception as e:
-                    logger.error(
-                        "Error updating parent_sku in tertiary database for im_sku=%s: %s",
-                        im_sku_value, e, exc_info=True
-                    )
-            # Start the background task
-            Thread(target=update_tertiary_db).start()
-        except Exception as e:
-            logger.error(
-                "Error scheduling tertiary database update for im_sku=%s: %s",
-                im_sku_value, e, exc_info=True
+        # Only update all records with the same im_sku if incoming_parent_sku has a value
+        # This prevents empty CSV values from clearing existing parent_sku data
+        if incoming_parent_sku and incoming_parent_sku.strip():
+            # Update all records with the same im_sku to have the same parent_sku
+            product_mapping.objects.filter(im_sku__iexact=im_sku_value).update(parent_sku=incoming_parent_sku)
+            logger.info(
+                "Updated parent_sku=%s for all records with im_sku=%s",
+                incoming_parent_sku, im_sku_value
             )
+        else:
+            logger.info(
+                "Skipped parent_sku batch update for im_sku=%s (incoming value is empty)",
+                im_sku_value
+            )
+        # Schedule the tertiary database update as a background task (only if parent_sku has value)
+        if incoming_parent_sku and incoming_parent_sku.strip():
+            try:
+                from threading import Thread
+                def update_tertiary_db():
+                    try:
+                        with transaction.atomic(using='tertiary'):
+                            with connections['tertiary'].cursor() as cursor:
+                                update_sql = """
+                                    UPDATE look_product_hierarchy_test
+                                    SET parent_sku = %s
+                                    WHERE im_sku = %s
+                                """
+                                cursor.execute(update_sql, [incoming_parent_sku, im_sku_value])
+                                logger.info(
+                                    "Updated parent_sku=%s for all records with im_sku=%s in tertiary database",
+                                    incoming_parent_sku, im_sku_value
+                                )
+                    except Exception as e:
+                        logger.error(
+                            "Error updating parent_sku in tertiary database for im_sku=%s: %s",
+                            im_sku_value, e, exc_info=True
+                        )
+                # Start the background task
+                Thread(target=update_tertiary_db).start()
+            except Exception as e:
+                logger.error(
+                    "Error scheduling tertiary database update for im_sku=%s: %s",
+                    im_sku_value, e, exc_info=True
+                )
     
     # ------------------------------------------------------------------
     # STEP 2.5: Update appropriate modified_by field for all records with same im_sku
