@@ -362,283 +362,283 @@ LEFT JOIN LatestTitle lt
     return JsonResponse({"error": "Only GET method allowed"}, status=405)
 
             
-def import_product_mapping_from_db(request):
-    if request.method == "GET":
-        try:
-            # region = "usa"
-            # Get existing mapping data
-            mapping_data_qs = product_mapping.objects.using('default').filter(
-                region__in=['US', 'CA']
-            ).filter(
-                Q(im_sku__isnull=True) | Q(im_sku=''),
-                Q(linworks_title__isnull=True) | Q(linworks_title=''),
-                Q(level_1__isnull=True) | Q(level_1=''),
-            )
+# def import_product_mapping_from_db(request):
+#     if request.method == "GET":
+#         try:
+#             # region = "usa"
+#             # Get existing mapping data
+#             mapping_data_qs = product_mapping.objects.using('default').filter(
+#                 region__in=['US', 'CA']
+#             ).filter(
+#                 Q(im_sku__isnull=True) | Q(im_sku=''),
+#                 Q(linworks_title__isnull=True) | Q(linworks_title=''),
+#                 Q(level_1__isnull=True) | Q(level_1=''),
+#             )
 
 
-            # Convert existing mappings to DataFrame
-            serializer = ProductMappingSerializer(mapping_data_qs, many=True)
-            df_existing = pd.DataFrame(serializer.data)
+#             # Convert existing mappings to DataFrame
+#             serializer = ProductMappingSerializer(mapping_data_qs, many=True)
+#             df_existing = pd.DataFrame(serializer.data)
             
-            # Handle case where df might be empty so that it doesn’t crash when df_existing is empty. It gives pandas a correctly shaped empty DataFrame to work with
-            if df_existing.empty:
-                df_existing = pd.DataFrame(columns=["marketplace_sku", "asin", "region", "sales_channel"])
+#             # Handle case where df might be empty so that it doesn’t crash when df_existing is empty. It gives pandas a correctly shaped empty DataFrame to work with
+#             if df_existing.empty:
+#                 df_existing = pd.DataFrame(columns=["marketplace_sku", "asin", "region", "sales_channel"])
                 
             
-            regions = ["US", "CA"]  
+#             regions = ["US", "CA"]  
 
-            allowed_regions = ["US", "CA"]
-            valid = [r for r in regions if r in allowed_regions]
+#             allowed_regions = ["US", "CA"]
+#             valid = [r for r in regions if r in allowed_regions]
 
-            if not valid:
-                raise ValueError("Invalid regions")
+#             if not valid:
+#                 raise ValueError("Invalid regions")
 
-            union_queries = []
+#             union_queries = []
 
-            for r in valid:
-                union_queries.append(f"""
-                    SELECT SellerSKU, ASIN, Region, SalesChannel
-                    FROM dbo.amazon_api_{r}
-                    WHERE OrderStatus = 'Shipped'
-                      AND SalesChannel != 'Non-Amazon'
-                """)
+#             for r in valid:
+#                 union_queries.append(f"""
+#                     SELECT SellerSKU, ASIN, Region, SalesChannel
+#                     FROM dbo.amazon_api_{r}
+#                     WHERE OrderStatus = 'Shipped'
+#                       AND SalesChannel != 'Non-Amazon'
+#                 """)
 
-            query_1 = f"""
-                SELECT DISTINCT
-                    UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU,
-                    UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
-                    UPPER(LTRIM(RTRIM(Region))) AS Region,
-                    UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) 
-                        + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel
-                FROM (
-                    {" UNION ALL ".join(union_queries)}
-                ) AS a;
-            """
+#             query_1 = f"""
+#                 SELECT DISTINCT
+#                     UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU,
+#                     UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
+#                     UPPER(LTRIM(RTRIM(Region))) AS Region,
+#                     UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) 
+#                         + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel
+#                 FROM (
+#                     {" UNION ALL ".join(union_queries)}
+#                 ) AS a;
+#             """
 
-            # # Run the SQL query
-            # query_1 = f"""
-            #     SELECT DISTINCT 
-            #         UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU, 
-            #         UPPER(LTRIM(RTRIM(ASIN))) AS ASIN, 
-            #         UPPER(LTRIM(RTRIM(Region))) AS Region, 
-            #         UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel
-            #     FROM (
-            #         SELECT SellerSKU, ASIN, Region, SalesChannel 
-            #         FROM dbo.amazon_api_{region}
-            #         WHERE OrderStatus = 'Shipped' 
-            #           AND SalesChannel != 'Non-Amazon'
-            #     ) AS a;
-            # """
+#             # # Run the SQL query
+#             # query_1 = f"""
+#             #     SELECT DISTINCT 
+#             #         UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU, 
+#             #         UPPER(LTRIM(RTRIM(ASIN))) AS ASIN, 
+#             #         UPPER(LTRIM(RTRIM(Region))) AS Region, 
+#             #         UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel
+#             #     FROM (
+#             #         SELECT SellerSKU, ASIN, Region, SalesChannel 
+#             #         FROM dbo.amazon_api_{region}
+#             #         WHERE OrderStatus = 'Shipped' 
+#             #           AND SalesChannel != 'Non-Amazon'
+#             #     ) AS a;
+#             # """
             
-            # Read data from product_mapping table
-            with connections['secondary'].cursor() as cursor:
-                cursor.execute(query_1)
-                columns = [col[0] for col in cursor.description]
-                results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+#             # Read data from product_mapping table
+#             with connections['secondary'].cursor() as cursor:
+#                 cursor.execute(query_1)
+#                 columns = [col[0] for col in cursor.description]
+#                 results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-            df_query = pd.DataFrame(results)
+#             df_query = pd.DataFrame(results)
             
-            # If df_existing not empty, filter out duplicates
-            if not df_existing.empty:
-                # Rename to align column names
-                df_existing.rename(
-                    columns={"marketplace_sku": "SellerSKU", "asin": "ASIN", "region": "Region", "sales_channel": "SalesChannel"},
-                    inplace=True
-                )
+#             # If df_existing not empty, filter out duplicates
+#             if not df_existing.empty:
+#                 # Rename to align column names
+#                 df_existing.rename(
+#                     columns={"marketplace_sku": "SellerSKU", "asin": "ASIN", "region": "Region", "sales_channel": "SalesChannel"},
+#                     inplace=True
+#                 )
 
-                # Merge to get only new rows
-                df_new = df_query.merge(df_existing, on=["SellerSKU", "ASIN", "Region", "SalesChannel"], how="left", indicator=True)
-                df_new = df_new[df_new["_merge"] == "left_only"].drop(columns=["_merge"])
-            else:
-                df_new = df_query
+#                 # Merge to get only new rows
+#                 df_new = df_query.merge(df_existing, on=["SellerSKU", "ASIN", "Region", "SalesChannel"], how="left", indicator=True)
+#                 df_new = df_new[df_new["_merge"] == "left_only"].drop(columns=["_merge"])
+#             else:
+#                 df_new = df_query
 
-            print(f"Existing records: {len(df_existing)}")
-            print(f"New records to insert: {len(df_new)}")
+#             print(f"Existing records: {len(df_existing)}")
+#             print(f"New records to insert: {len(df_new)}")
             
-            # Prepare objects for bulk_create
-            records = [
-                product_mapping(
-                    marketplace_sku=row["SellerSKU"],
-                    asin=row["ASIN"],
-                    im_sku=None,
-                    region=row["Region"],
-                    sales_channel=row["SalesChannel"],
-                    level_1=None,
-                    linworks_title=None,
-                    modified_by=None,
-                    comment=None,
-                )
-                for _, row in df_new.iterrows()
-            ]
-            # Insert new records only
-            product_mapping.objects.bulk_create(records, ignore_conflicts=True)
+#             # Prepare objects for bulk_create
+#             records = [
+#                 product_mapping(
+#                     marketplace_sku=row["SellerSKU"],
+#                     asin=row["ASIN"],
+#                     im_sku=None,
+#                     region=row["Region"],
+#                     sales_channel=row["SalesChannel"],
+#                     level_1=None,
+#                     linworks_title=None,
+#                     modified_by=None,
+#                     comment=None,
+#                 )
+#                 for _, row in df_new.iterrows()
+#             ]
+#             # Insert new records only
+#             product_mapping.objects.bulk_create(records, ignore_conflicts=True)
 
-            print(f"✅ Inserted {len(records)} new records successfully.")
+#             print(f"✅ Inserted {len(records)} new records successfully.")
 
-                # print(len(results))
-                # # results = cursor.fetchall()
-                # # print(len(results))
-                # records = []
-                # for row in results:
-                #     marketplace_sku = row['SellerSKU']
-                #     asin = row['ASIN']
-                #     # im_sku = row['im_sku'],
-                #     region = row['Region']
-                #     sales_channel = row['SalesChannel']
-                #     # level_1 = row['level_1'],
-                #     # linworks_title = row['Linnworks Title'],
-                #     # modified_by = row["linnwork's_sku_received_from"],
-                #     # comment = row['Comment'] if "Comment" in row and pd.notna(row["Comment"]) else None,
-                #     print(marketplace_sku, asin, region, sales_channel)
-                #     record = product_mapping(
-                #         marketplace_sku=marketplace_sku,
-                #         asin=asin,
-                #         im_sku=None,
-                #         region=region,
-                #         sales_channel=sales_channel,
-                #         level_1=None,
-                #         linworks_title=None,
-                #         modified_by=None,
-                #         comment=None,
-                #     )
-                #     records.append(record)
-            # product_mapping.objects.bulk_create(records, ignore_conflicts=True)
-            query = """
-WITH CombinedData AS (
-    SELECT
-        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))) AS SellerSKU,
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) AS SalesChannel,
-        PurchaseDate_Materialized AS PurchaseDate,
-        Title
-    FROM dbo.amazon_api_de
-    WHERE OrderStatus_Optimized = 'Shipped' 
-      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+#                 # print(len(results))
+#                 # # results = cursor.fetchall()
+#                 # # print(len(results))
+#                 # records = []
+#                 # for row in results:
+#                 #     marketplace_sku = row['SellerSKU']
+#                 #     asin = row['ASIN']
+#                 #     # im_sku = row['im_sku'],
+#                 #     region = row['Region']
+#                 #     sales_channel = row['SalesChannel']
+#                 #     # level_1 = row['level_1'],
+#                 #     # linworks_title = row['Linnworks Title'],
+#                 #     # modified_by = row["linnwork's_sku_received_from"],
+#                 #     # comment = row['Comment'] if "Comment" in row and pd.notna(row["Comment"]) else None,
+#                 #     print(marketplace_sku, asin, region, sales_channel)
+#                 #     record = product_mapping(
+#                 #         marketplace_sku=marketplace_sku,
+#                 #         asin=asin,
+#                 #         im_sku=None,
+#                 #         region=region,
+#                 #         sales_channel=sales_channel,
+#                 #         level_1=None,
+#                 #         linworks_title=None,
+#                 #         modified_by=None,
+#                 #         comment=None,
+#                 #     )
+#                 #     records.append(record)
+#             # product_mapping.objects.bulk_create(records, ignore_conflicts=True)
+#             query = """
+# WITH CombinedData AS (
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))) AS SellerSKU,
+#         ASIN,
+#         Region,
+#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) AS SalesChannel,
+#         PurchaseDate_Materialized AS PurchaseDate,
+#         Title
+#     FROM dbo.amazon_api_de
+#     WHERE OrderStatus_Optimized = 'Shipped' 
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
     
-    UNION ALL
+#     UNION ALL
     
-    SELECT
-        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
-        PurchaseDate_Materialized,
-        Title
-    FROM dbo.amazon_api_es
-    WHERE OrderStatus_Optimized = 'Shipped' 
-      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         ASIN,
+#         Region,
+#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_es
+#     WHERE OrderStatus_Optimized = 'Shipped' 
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
     
-    UNION ALL
+#     UNION ALL
     
-    SELECT
-        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
-        PurchaseDate_Materialized,
-        Title
-    FROM dbo.amazon_api_it
-    WHERE OrderStatus_Optimized = 'Shipped' 
-      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         ASIN,
+#         Region,
+#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_it
+#     WHERE OrderStatus_Optimized = 'Shipped' 
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
     
-    UNION ALL
+#     UNION ALL
     
-    SELECT
-        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
-        PurchaseDate_Materialized,
-        Title
-    FROM dbo.amazon_api_uk
-    WHERE OrderStatus_Optimized = 'Shipped' 
-      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         ASIN,
+#         Region,
+#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_uk
+#     WHERE OrderStatus_Optimized = 'Shipped' 
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
     
-    UNION ALL
+#     UNION ALL
 
-    SELECT
-        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
-        PurchaseDate_Materialized,
-        Title
-    FROM dbo.amazon_api_usa
-    WHERE OrderStatus_Optimized = 'Shipped' 
-      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         ASIN,
+#         Region,
+#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_usa
+#     WHERE OrderStatus_Optimized = 'Shipped' 
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
     
-    UNION ALL
+#     UNION ALL
 
-    SELECT
-        UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
-        ASIN,
-        Region,
-        UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
-        PurchaseDate_Materialized,
-        Title
-    FROM dbo.amazon_api_ca
-    WHERE OrderStatus_Optimized = 'Shipped' 
-      AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
-),
-DistinctSellers AS (
-    SELECT DISTINCT SellerSKU, ASIN, Region, SalesChannel
-    FROM CombinedData
-),
-LatestTitle AS (
-    SELECT
-        SellerSKU,
-        SalesChannel,
-        PurchaseDate,
-        Title,
-        ROW_NUMBER() OVER (
-            PARTITION BY SellerSKU, SalesChannel 
-            ORDER BY PurchaseDate DESC
-        ) AS rn
-    FROM CombinedData
-)
-SELECT 
-    ds.SellerSKU, 
-    ds.ASIN, 
-    ds.Region, 
-    ds.SalesChannel,
-    lt.PurchaseDate AS [Date], 
-    lt.Title
-FROM DistinctSellers ds
-LEFT JOIN LatestTitle lt
-    ON ds.SellerSKU = lt.SellerSKU 
-    AND ds.SalesChannel = lt.SalesChannel
-    AND lt.rn = 1;
-"""
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         ASIN,
+#         Region,
+#         UPPER(LTRIM(RTRIM(SalesChannel_Optimized))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_ca
+#     WHERE OrderStatus_Optimized = 'Shipped' 
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+# ),
+# DistinctSellers AS (
+#     SELECT DISTINCT SellerSKU, ASIN, Region, SalesChannel
+#     FROM CombinedData
+# ),
+# LatestTitle AS (
+#     SELECT
+#         SellerSKU,
+#         SalesChannel,
+#         PurchaseDate,
+#         Title,
+#         ROW_NUMBER() OVER (
+#             PARTITION BY SellerSKU, SalesChannel 
+#             ORDER BY PurchaseDate DESC
+#         ) AS rn
+#     FROM CombinedData
+# )
+# SELECT 
+#     ds.SellerSKU, 
+#     ds.ASIN, 
+#     ds.Region, 
+#     ds.SalesChannel,
+#     lt.PurchaseDate AS [Date], 
+#     lt.Title
+# FROM DistinctSellers ds
+# LEFT JOIN LatestTitle lt
+#     ON ds.SellerSKU = lt.SellerSKU 
+#     AND ds.SalesChannel = lt.SalesChannel
+#     AND lt.rn = 1;
+# """
 
-            with connections['secondary'].cursor() as cursor:
-                cursor.execute(query)
-                join_results = cursor.fetchall()
+#             with connections['secondary'].cursor() as cursor:
+#                 cursor.execute(query)
+#                 join_results = cursor.fetchall()
 
-            # Step 3: Update matching product_mapping records or create new ones.
-            records_to_update = []
-            new_records = []
-            for row in join_results:
-                seller_sku, asin, region, sales_channel, date_val, title = row
-                qs = product_mapping.objects.filter(
-                    marketplace_sku__iexact=seller_sku,
-                    sales_channel__iexact=sales_channel
-                )
-                if qs.exists():
-                    for pm_obj in qs:
-                        pm_obj.date = date_val  # Update the date field.
-                        pm_obj.amazon_title = title  # Update amazon_title with Title.
-                        records_to_update.append(pm_obj)
+#             # Step 3: Update matching product_mapping records or create new ones.
+#             records_to_update = []
+#             new_records = []
+#             for row in join_results:
+#                 seller_sku, asin, region, sales_channel, date_val, title = row
+#                 qs = product_mapping.objects.filter(
+#                     marketplace_sku__iexact=seller_sku,
+#                     sales_channel__iexact=sales_channel
+#                 )
+#                 if qs.exists():
+#                     for pm_obj in qs:
+#                         pm_obj.date = date_val  # Update the date field.
+#                         pm_obj.amazon_title = title  # Update amazon_title with Title.
+#                         records_to_update.append(pm_obj)
 
-            if records_to_update:
-                product_mapping.objects.bulk_update(records_to_update, ['date', 'amazon_title'])
+#             if records_to_update:
+#                 product_mapping.objects.bulk_update(records_to_update, ['date', 'amazon_title'])
 
-            return JsonResponse({"message": "Data imported and joined data saved successfully"}, status=201)
+#             return JsonResponse({"message": "Data imported and joined data saved successfully"}, status=201)
 
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+#         except Exception as e:
+#             return JsonResponse({"error": str(e)}, status=500)
 
-    return JsonResponse({"error": "Only GET method allowed"}, status=405)
+#     return JsonResponse({"error": "Only GET method allowed"}, status=405)
 
 class Dashboard(APIView):
     """
