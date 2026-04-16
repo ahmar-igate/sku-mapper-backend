@@ -779,9 +779,8 @@ class New_Mapping(APIView):
                 "amazon_title" ,     # additional field
             ))
             
-
             query = """
-WITH CombinedData AS (
+            WITH CombinedData AS (
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))) AS SellerSKU,
         UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
@@ -794,6 +793,19 @@ WITH CombinedData AS (
       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
 
     UNION ALL
+
+	SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU,
+        UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
+        UPPER(LTRIM(RTRIM(Region))) AS Region,
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel,
+        PurchaseDate AS PurchaseDate,
+        Title
+    FROM [dbo].[scm_sku_mapper_de]
+    WHERE OrderStatus = 'Shipped'
+      AND UPPER(LTRIM(RTRIM(SalesChannel))) <> 'NON-AMAZON'
+
+	UNION ALL
 
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
@@ -808,6 +820,19 @@ WITH CombinedData AS (
 
     UNION ALL
 
+	SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU,
+        UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
+        UPPER(LTRIM(RTRIM(Region))) AS Region,
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel,
+        PurchaseDate AS PurchaseDate,
+        Title
+    FROM [dbo].[scm_sku_mapper_es]
+    WHERE OrderStatus = 'Shipped'
+      AND UPPER(LTRIM(RTRIM(SalesChannel))) <> 'NON-AMAZON'
+
+	UNION ALL
+
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
         UPPER(LTRIM(RTRIM(ASIN))),
@@ -820,6 +845,19 @@ WITH CombinedData AS (
       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
 
     UNION ALL
+
+	SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU,
+        UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
+        UPPER(LTRIM(RTRIM(Region))) AS Region,
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel,
+        PurchaseDate AS PurchaseDate,
+        Title
+    FROM [dbo].[scm_sku_mapper_it]
+    WHERE OrderStatus = 'Shipped'
+      AND UPPER(LTRIM(RTRIM(SalesChannel))) <> 'NON-AMAZON'
+
+	UNION ALL
 
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
@@ -834,6 +872,19 @@ WITH CombinedData AS (
 
     UNION ALL
 
+	SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU,
+        UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
+        UPPER(LTRIM(RTRIM(Region))) AS Region,
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel,
+        PurchaseDate AS PurchaseDate,
+        Title
+    FROM [dbo].[scm_sku_mapper_uk]
+    WHERE OrderStatus = 'Shipped'
+      AND UPPER(LTRIM(RTRIM(SalesChannel))) <> 'NON-AMAZON'
+
+	UNION ALL
+
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
         UPPER(LTRIM(RTRIM(ASIN))),
@@ -847,6 +898,19 @@ WITH CombinedData AS (
 
     UNION ALL
 
+	SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU,
+        UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
+        UPPER(LTRIM(RTRIM(Region))) AS Region,
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel,
+        PurchaseDate AS PurchaseDate,
+        Title
+    FROM [dbo].[scm_sku_mapper_usa]
+    WHERE OrderStatus = 'Shipped'
+      AND UPPER(LTRIM(RTRIM(SalesChannel))) <> 'NON-AMAZON'
+
+	UNION ALL
+
     SELECT
         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
         UPPER(LTRIM(RTRIM(ASIN))),
@@ -857,6 +921,33 @@ WITH CombinedData AS (
     FROM dbo.amazon_api_ca
     WHERE OrderStatus_Optimized = 'Shipped'
       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+
+	UNION ALL
+
+	SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU,
+        UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
+        UPPER(LTRIM(RTRIM(Region))) AS Region,
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel,
+        PurchaseDate AS PurchaseDate,
+        Title
+    FROM [dbo].[scm_sku_mapper_ca]
+    WHERE OrderStatus = 'Shipped'
+      AND UPPER(LTRIM(RTRIM(SalesChannel))) <> 'NON-AMAZON'
+      
+    UNION ALL
+    
+    SELECT
+        UPPER(LTRIM(RTRIM(SellerSKU))) AS SellerSKU,
+        UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
+        UPPER(LTRIM(RTRIM(Region))) AS Region,
+        UPPER(LEFT(LTRIM(RTRIM(SalesChannel)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel)), 2, LEN(LTRIM(RTRIM(SalesChannel))))) AS SalesChannel,
+        PurchaseDate AS PurchaseDate,
+        Title
+    FROM [dbo].[scm_sku_mapper_fr]
+    WHERE OrderStatus = 'Shipped'
+      AND UPPER(LTRIM(RTRIM(SalesChannel))) <> 'NON-AMAZON'
+    
 ),
 DistinctSellers AS (
     SELECT DISTINCT SellerSKU, ASIN, Region, SalesChannel
@@ -887,8 +978,117 @@ LEFT JOIN LatestTitle lt
     ON ds.SellerSKU = lt.SellerSKU
     AND ds.ASIN = lt.ASIN
     AND ds.SalesChannel = lt.SalesChannel
-    AND lt.rn = 1;
-"""
+    AND lt.rn = 1;  
+              """
+#             query = """
+# WITH CombinedData AS (
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))) AS SellerSKU,
+#         UPPER(LTRIM(RTRIM(ASIN))) AS ASIN,
+#         UPPER(LTRIM(RTRIM(Region))) AS Region,
+#         UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))) AS SalesChannel,
+#         PurchaseDate_Materialized AS PurchaseDate,
+#         Title
+#     FROM dbo.amazon_api_de
+#     WHERE OrderStatus_Optimized = 'Shipped'
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+
+#     UNION ALL
+
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         UPPER(LTRIM(RTRIM(ASIN))),
+#         UPPER(LTRIM(RTRIM(Region))),
+#         UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_es
+#     WHERE OrderStatus_Optimized = 'Shipped'
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+
+#     UNION ALL
+
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         UPPER(LTRIM(RTRIM(ASIN))),
+#         UPPER(LTRIM(RTRIM(Region))),
+#         UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_it
+#     WHERE OrderStatus_Optimized = 'Shipped'
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+
+#     UNION ALL
+
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         UPPER(LTRIM(RTRIM(ASIN))),
+#         UPPER(LTRIM(RTRIM(Region))),
+#         UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_uk
+#     WHERE OrderStatus_Optimized = 'Shipped'
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+
+#     UNION ALL
+
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         UPPER(LTRIM(RTRIM(ASIN))),
+#         UPPER(LTRIM(RTRIM(Region))),
+#         UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_usa
+#     WHERE OrderStatus_Optimized = 'Shipped'
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+
+#     UNION ALL
+
+#     SELECT
+#         UPPER(LTRIM(RTRIM(SellerSKU_Optimized))),
+#         UPPER(LTRIM(RTRIM(ASIN))),
+#         UPPER(LTRIM(RTRIM(Region))),
+#         UPPER(LEFT(LTRIM(RTRIM(SalesChannel_Optimized)), 1)) + LOWER(SUBSTRING(LTRIM(RTRIM(SalesChannel_Optimized)), 2, LEN(LTRIM(RTRIM(SalesChannel_Optimized))))),
+#         PurchaseDate_Materialized,
+#         Title
+#     FROM dbo.amazon_api_ca
+#     WHERE OrderStatus_Optimized = 'Shipped'
+#       AND UPPER(LTRIM(RTRIM(SalesChannel_Optimized))) <> 'NON-AMAZON'
+# ),
+# DistinctSellers AS (
+#     SELECT DISTINCT SellerSKU, ASIN, Region, SalesChannel
+#     FROM CombinedData
+# ),
+# LatestTitle AS (
+#     SELECT
+#         SellerSKU,
+#         ASIN,
+#         SalesChannel,
+#         PurchaseDate,
+#         Title,
+#         ROW_NUMBER() OVER (
+#             PARTITION BY SellerSKU, ASIN, SalesChannel
+#             ORDER BY PurchaseDate DESC
+#         ) AS rn
+#     FROM CombinedData
+# )
+# SELECT
+#     ds.SellerSKU,
+#     ds.ASIN,
+#     ds.Region,
+#     ds.SalesChannel,
+#     lt.PurchaseDate AS [Date],
+#     lt.Title
+# FROM DistinctSellers ds
+# LEFT JOIN LatestTitle lt
+#     ON ds.SellerSKU = lt.SellerSKU
+#     AND ds.ASIN = lt.ASIN
+#     AND ds.SalesChannel = lt.SalesChannel
+#     AND lt.rn = 1;
+# """
 
             with connections['secondary'].cursor() as cursor:
                 cursor.execute(query)
@@ -1328,6 +1528,90 @@ LEFT JOIN LatestTitle lt
                 for rec in updated_records[:3]:
                     print(f"ASIN: {rec.asin}, SKU: {rec.marketplace_sku}, level_1: {rec.level_1}")
             
+            # ------------------------------------------------------------------
+            # Sync records with non-empty im_sku to new_product_mapping
+            # ------------------------------------------------------------------
+            all_saved_objs = list(objs_to_update) + list(objs_to_create)
+            # Filter to only records that have a valid im_sku
+            objs_with_im_sku = [
+                obj for obj in all_saved_objs
+                if obj.im_sku and str(obj.im_sku).strip() and str(obj.im_sku).strip().lower() not in ('none', 'nan', 'null')
+            ]
+            print(f"Syncing {len(objs_with_im_sku)} records to new_product_mapping...")
+
+            def determine_company(region_val):
+                if region_val in ("IT", "UK", "DE"):
+                    return "B2fitness"
+                elif region_val == "ES":
+                    return "B2fitness LTD"
+                elif region_val in ("US", "CA"):
+                    return "brandsinn"
+                elif region_val == "FR":
+                    return "RDX INC LTD"
+                return None
+
+            def normalize_sales_channel(sc):
+                if sc == "Amazon.co.uk":
+                    return "Amazon.uk"
+                return sc
+
+            new_mapping_to_update = []
+            new_mapping_to_create = []
+
+            # Build lookup of existing new_product_mapping by id
+            existing_npm_ids = set(
+                new_product_mapping.objects.using('default')
+                .filter(id__in=[obj.id for obj in objs_with_im_sku])
+                .values_list('id', flat=True)
+            )
+
+            for obj in objs_with_im_sku:
+                region_val = (obj.region or "").strip().upper()
+                company = determine_company(region_val)
+                sc = normalize_sales_channel((obj.sales_channel or "").strip())
+
+                npm_defaults = {
+                    'marketplace_sku': (obj.marketplace_sku or "").strip(),
+                    'asin': (obj.asin or "").strip(),
+                    'im_sku': (obj.im_sku or "").strip(),
+                    'parent_sku': (obj.parent_sku or "").strip(),
+                    'region': region_val,
+                    'marketplace': sc,
+                    'level_1': (obj.level_1 or "").strip(),
+                    'linworks_title': (obj.linworks_title or "").strip(),
+                    'marketplace_sales_table': "stg_tr_amazon_raw",
+                    'channel': "Amazon",
+                    'company': (company or "").strip(),
+                    'modified_by': (obj.modified_by or "").strip(),
+                    'modified_by_finance': (obj.modified_by_finance or "").strip() if hasattr(obj, 'modified_by_finance') else "",
+                    'modified_by_admin': (obj.modified_by_admin or "").strip() if hasattr(obj, 'modified_by_admin') else "",
+                    'comment': (obj.comment or "").strip(),
+                    'comment_by_finance': (obj.comment_by_finance or "").strip() if hasattr(obj, 'comment_by_finance') else "",
+                }
+
+                if obj.id in existing_npm_ids:
+                    npm_obj = new_product_mapping(id=obj.id, **npm_defaults)
+                    new_mapping_to_update.append(npm_obj)
+                else:
+                    npm_obj = new_product_mapping(id=obj.id, **npm_defaults)
+                    new_mapping_to_create.append(npm_obj)
+
+            with transaction.atomic(using='default'):
+                if new_mapping_to_update:
+                    print(f"Bulk updating {len(new_mapping_to_update)} new_product_mapping records...")
+                    new_product_mapping.objects.using('default').bulk_update(
+                        new_mapping_to_update,
+                        ['marketplace_sku', 'asin', 'im_sku', 'parent_sku', 'region',
+                         'marketplace', 'level_1', 'linworks_title', 'marketplace_sales_table',
+                         'channel', 'company', 'modified_by', 'modified_by_finance',
+                         'modified_by_admin', 'comment', 'comment_by_finance'],
+                    )
+                if new_mapping_to_create:
+                    print(f"Bulk creating {len(new_mapping_to_create)} new_product_mapping records...")
+                    new_product_mapping.objects.using('default').bulk_create(new_mapping_to_create)
+
+            print(f"new_product_mapping sync done — updated: {len(new_mapping_to_update)}, created: {len(new_mapping_to_create)}")
+            
             return Response(
                 {"message": "success"},
                 status=status.HTTP_200_OK
@@ -1627,6 +1911,8 @@ def updateMapping_helper(mapping_data, id):
         company = 'B2fitness LTD'
     elif region in ["US", "CA"]:
         company = 'brandsinn'
+    elif region in ["FR"]:
+        company = 'RDX INC LTD'
     else:
         company = None  # or whatever default you want
     # ------------------------------------------------------------------
@@ -1969,7 +2255,7 @@ class SaveMapping(APIView):
             level_3     = row.get('level_3')
             level_4     = row.get('level_4')
             level_5     = row.get('level_5')
-            company     = row.get('company', "RDX")
+            company     = row.get('company', "")
             sales_table = row.get('marketplace_sales_table', "stg_tr_amazon_raw")
             channel     = row.get('channel', 'Amazon')
             linworks_title = row.get('linworks_title')
