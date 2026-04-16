@@ -1528,90 +1528,6 @@ LEFT JOIN LatestTitle lt
                 for rec in updated_records[:3]:
                     print(f"ASIN: {rec.asin}, SKU: {rec.marketplace_sku}, level_1: {rec.level_1}")
             
-            # ------------------------------------------------------------------
-            # Sync records with non-empty im_sku to new_product_mapping
-            # ------------------------------------------------------------------
-            all_saved_objs = list(objs_to_update) + list(objs_to_create)
-            # Filter to only records that have a valid im_sku
-            objs_with_im_sku = [
-                obj for obj in all_saved_objs
-                if obj.im_sku and str(obj.im_sku).strip() and str(obj.im_sku).strip().lower() not in ('none', 'nan', 'null')
-            ]
-            print(f"Syncing {len(objs_with_im_sku)} records to new_product_mapping...")
-
-            def determine_company(region_val):
-                if region_val in ("IT", "UK", "DE"):
-                    return "B2fitness"
-                elif region_val == "ES":
-                    return "B2fitness LTD"
-                elif region_val in ("US", "CA"):
-                    return "brandsinn"
-                elif region_val == "FR":
-                    return "RDX INC LTD"
-                return None
-
-            def normalize_sales_channel(sc):
-                if sc == "Amazon.co.uk":
-                    return "Amazon.uk"
-                return sc
-
-            new_mapping_to_update = []
-            new_mapping_to_create = []
-
-            # Build lookup of existing new_product_mapping by id
-            existing_npm_ids = set(
-                new_product_mapping.objects.using('default')
-                .filter(id__in=[obj.id for obj in objs_with_im_sku])
-                .values_list('id', flat=True)
-            )
-
-            for obj in objs_with_im_sku:
-                region_val = (obj.region or "").strip().upper()
-                company = determine_company(region_val)
-                sc = normalize_sales_channel((obj.sales_channel or "").strip())
-
-                npm_defaults = {
-                    'marketplace_sku': (obj.marketplace_sku or "").strip(),
-                    'asin': (obj.asin or "").strip(),
-                    'im_sku': (obj.im_sku or "").strip(),
-                    'parent_sku': (obj.parent_sku or "").strip(),
-                    'region': region_val,
-                    'marketplace': sc,
-                    'level_1': (obj.level_1 or "").strip(),
-                    'linworks_title': (obj.linworks_title or "").strip(),
-                    'marketplace_sales_table': "stg_tr_amazon_raw",
-                    'channel': "Amazon",
-                    'company': (company or "").strip(),
-                    'modified_by': (obj.modified_by or "").strip(),
-                    'modified_by_finance': (obj.modified_by_finance or "").strip() if hasattr(obj, 'modified_by_finance') else "",
-                    'modified_by_admin': (obj.modified_by_admin or "").strip() if hasattr(obj, 'modified_by_admin') else "",
-                    'comment': (obj.comment or "").strip(),
-                    'comment_by_finance': (obj.comment_by_finance or "").strip() if hasattr(obj, 'comment_by_finance') else "",
-                }
-
-                if obj.id in existing_npm_ids:
-                    npm_obj = new_product_mapping(id=obj.id, **npm_defaults)
-                    new_mapping_to_update.append(npm_obj)
-                else:
-                    npm_obj = new_product_mapping(id=obj.id, **npm_defaults)
-                    new_mapping_to_create.append(npm_obj)
-
-            with transaction.atomic(using='default'):
-                if new_mapping_to_update:
-                    print(f"Bulk updating {len(new_mapping_to_update)} new_product_mapping records...")
-                    new_product_mapping.objects.using('default').bulk_update(
-                        new_mapping_to_update,
-                        ['marketplace_sku', 'asin', 'im_sku', 'parent_sku', 'region',
-                         'marketplace', 'level_1', 'linworks_title', 'marketplace_sales_table',
-                         'channel', 'company', 'modified_by', 'modified_by_finance',
-                         'modified_by_admin', 'comment', 'comment_by_finance'],
-                    )
-                if new_mapping_to_create:
-                    print(f"Bulk creating {len(new_mapping_to_create)} new_product_mapping records...")
-                    new_product_mapping.objects.using('default').bulk_create(new_mapping_to_create)
-
-            print(f"new_product_mapping sync done — updated: {len(new_mapping_to_update)}, created: {len(new_mapping_to_create)}")
-            
             return Response(
                 {"message": "success"},
                 status=status.HTTP_200_OK
@@ -2233,19 +2149,12 @@ class SaveMapping(APIView):
         END
         """
 
-        # SQL to update parent_sku for all records with same im_sku
+        # Add SQL to update parent_sku for all records with same im_sku
         update_parent_sku_sql = """
             UPDATE look_product_hierarchy
             SET parent_sku = %s
             WHERE im_sku = %s
         """
-
-        # ------------------------------------------------------------------
-        # Pre-process: separate records into delete vs upsert, skip invalid
-        # ------------------------------------------------------------------
-        delete_rows = []
-        upsert_rows = []
-        parent_sku_updates = {}  # deduplicate: {im_sku: parent_sku}
 
         for row in records:
             if not isinstance(row, dict):
@@ -2267,105 +2176,91 @@ class SaveMapping(APIView):
             channel     = row.get('channel', 'Amazon')
             linworks_title = row.get('linworks_title')
 
-            if is_blank(marketplace_sku) or is_blank(region) or is_blank(asin):
+            # If these critical fields are missing, skip entirely
+            if (
+                is_blank(marketplace_sku) or
+                is_blank(region) or
+                is_blank(asin)
+            ):
                 rows_skipped += 1
                 continue
 
-            row_data = {
-                'marketplace_sku': marketplace_sku, 'region': region, 'asin': asin,
-                'im_sku': im_sku, 'parent_sku': parent_sku, 'marketplace': marketplace,
-                'level_1': level_1, 'level_2': level_2, 'level_3': level_3,
-                'level_4': level_4, 'level_5': level_5, 'company': company,
-                'sales_table': sales_table, 'channel': channel, 'linworks_title': linworks_title,
-            }
-
+            # ----------------------------------------
+            #  If IM SKU is blank => "Unmap" / Delete
+            # ----------------------------------------
             if is_blank(im_sku):
-                delete_rows.append(row_data)
-            else:
-                upsert_rows.append(row_data)
-                # Deduplicate parent_sku updates by im_sku
-                if not is_blank(im_sku) and not is_blank(parent_sku):
-                    parent_sku_updates[im_sku] = parent_sku
-
-        print(f"SaveMapping: {len(delete_rows)} deletes, {len(upsert_rows)} upserts, {len(parent_sku_updates)} unique parent_sku updates, {rows_skipped} skipped")
-
-        # Collect all new_product_mapping IDs to delete at the end (in bulk)
-        all_npm_ids_to_delete = []
-        CHUNK_SIZE = 200
-
-        # ------------------------------------------------------------------
-        # Process DELETES in chunks using a single cursor
-        # ------------------------------------------------------------------
-        if delete_rows:
-            try:
-                with connections['tertiary'].cursor() as cursor:
-                    for chunk in chunker(delete_rows, CHUNK_SIZE):
-                        for rd in chunk:
-                            try:
-                                cursor.execute(delete_sql, [rd['marketplace_sku'], rd['region']])
-                                rows_upserted += 1
-                                key = (rd['marketplace_sku'], rd['region'])
-                                all_npm_ids_to_delete.extend(group_to_ids.get(key, []))
-                            except Exception as e:
-                                rows_failed += 1
-                                logger.error("Error deleting (sku=%s, region=%s): %s", rd['marketplace_sku'], rd['region'], e)
-            except Exception as e:
-                logger.error("Error opening tertiary cursor for deletes: %s", e, exc_info=True)
-
-        # ------------------------------------------------------------------
-        # Process UPSERTS in chunks using a single cursor
-        # ------------------------------------------------------------------
-        if upsert_rows:
-            try:
-                with connections['tertiary'].cursor() as cursor:
-                    for chunk in chunker(upsert_rows, CHUNK_SIZE):
-                        for rd in chunk:
-                            try:
-                                params = (
-                                    rd['marketplace_sku'], rd['region'],
-                                    # update fields
-                                    rd['asin'], rd['im_sku'], rd['parent_sku'], rd['region'], rd['marketplace'],
-                                    rd['level_1'], rd['level_2'], rd['level_3'], rd['level_4'], rd['level_5'],
-                                    rd['company'], rd['sales_table'], rd['channel'], rd['linworks_title'],
-                                    # update WHERE
-                                    rd['marketplace_sku'], rd['region'],
-                                    # insert values
-                                    rd['marketplace_sku'], rd['asin'], rd['im_sku'], rd['parent_sku'], rd['region'],
-                                    rd['marketplace'], rd['level_1'], rd['level_2'], rd['level_3'],
-                                    rd['level_4'], rd['level_5'], rd['company'], rd['sales_table'],
-                                    rd['channel'], rd['linworks_title'],
-                                )
-                                cursor.execute(upsert_sql, params)
-                                rows_upserted += 1
-                                key = (rd['marketplace_sku'], rd['region'])
-                                all_npm_ids_to_delete.extend(group_to_ids.get(key, []))
-                            except Exception as e:
-                                rows_failed += 1
-                                logger.error("Error upserting group (sku=%s, region=%s): %s", rd['marketplace_sku'], rd['region'], e)
-
-                    # Deduplicated parent_sku updates (once per unique im_sku instead of per row)
-                    for im_sku_val, parent_sku_val in parent_sku_updates.items():
-                        try:
-                            cursor.execute(update_parent_sku_sql, [parent_sku_val, im_sku_val])
-                        except Exception as e:
-                            logger.error("Error updating parent_sku for im_sku=%s: %s", im_sku_val, e)
-            except Exception as e:
-                logger.error("Error opening tertiary cursor for upserts: %s", e, exc_info=True)
-
-        # ------------------------------------------------------------------
-        # Bulk delete from new_product_mapping (single batch instead of per-row)
-        # ------------------------------------------------------------------
-        if all_npm_ids_to_delete:
-            for chunk in chunker(all_npm_ids_to_delete, 500):
+                # Delete from look_product_hierarchy_test for (sku, region)
                 try:
-                    new_product_mapping.objects.using('default').filter(id__in=chunk).delete()
+                    with transaction.atomic(using='tertiary'):
+                        with connections['tertiary'].cursor() as cursor:
+                            cursor.execute(delete_sql, [marketplace_sku, region])
+                    
+                    rows_upserted += 1
+
+                    # Also remove the original records from new_product_mapping
+                    key = (marketplace_sku, region)
+                    record_ids = group_to_ids.get(key, [])
+                    if record_ids:
+                        new_product_mapping.objects.using('default').filter(id__in=record_ids).delete()
+
                 except Exception as e:
-                    logger.error("Error bulk-deleting new_product_mapping ids: %s", e)
+                    rows_failed += 1
+                    logger.error(
+                        "Error deleting (sku=%s, region=%s): %s", 
+                        marketplace_sku, region, e, exc_info=True
+                    )
+                continue
+
+            # ----------------------------------------
+            #  Otherwise, do normal upsert
+            # ----------------------------------------
+            try:
+                with transaction.atomic(using='tertiary'):
+                    with connections['tertiary'].cursor() as cursor:
+                        # First, update parent_sku for all records with same im_sku
+                        if not is_blank(im_sku) and not is_blank(parent_sku):
+                            cursor.execute(update_parent_sku_sql, [parent_sku, im_sku])
+                            logger.info(
+                                "Updated parent_sku=%s for all records with im_sku=%s",
+                                parent_sku, im_sku
+                            )
+
+                        # Then do the normal upsert
+                        params = (
+                            marketplace_sku, region, 
+                            # update fields
+                            asin, im_sku, parent_sku, region, marketplace,
+                            level_1, level_2, level_3, level_4, level_5,
+                            company, sales_table, channel, linworks_title,
+                            # update WHERE
+                            marketplace_sku, region,
+                            # insert values
+                            marketplace_sku, asin, im_sku, parent_sku, region,
+                            marketplace, level_1, level_2, level_3,
+                            level_4, level_5, company, sales_table,
+                            channel, linworks_title
+                        )
+                        cursor.execute(upsert_sql, params)
+
+                rows_upserted += 1
+
+                # Now delete from new_product_mapping
+                key = (marketplace_sku, region)
+                record_ids = group_to_ids.get(key, [])
+                if record_ids:
+                    new_product_mapping.objects.using('default').filter(id__in=record_ids).delete()
+
+            except Exception as e:
+                rows_failed += 1
+                logger.error(
+                    "Error upserting group (sku=%s, region=%s): %s", 
+                    marketplace_sku, region, e, exc_info=True
+                )
 
         # Final response
         return Response({
             "message": "Finished processing groups.",
-            "timestamp": datetime.now().strftime("%b %d, %Y %I:%M %p"),
+            "timestamp": datetime.now().strftime("%b %d, %Y %I:%M %p"),  # Human-readable format
             "rows_upserted_or_unmapped": rows_upserted,
             "rows_skipped_due_to_missing_fields": rows_skipped,
             "rows_failed_upsert": rows_failed
