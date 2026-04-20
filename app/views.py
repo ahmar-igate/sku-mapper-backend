@@ -1452,6 +1452,18 @@ LEFT JOIN LatestTitle lt
                 for obj in existing_objs
             }
             
+            # Track which existing records had empty im_sku BEFORE this run's auto-fill.
+            # Only these (plus brand-new creates) should be staged if they get filled.
+            previously_empty_im_sku_keys = set()
+            for key, obj in existing_map.items():
+                old_im = obj.im_sku
+                if (
+                    not old_im
+                    or (isinstance(old_im, str) and old_im.strip().lower() in ('', 'none', 'nan', 'null'))
+                ):
+                    previously_empty_im_sku_keys.add(key)
+            print(f"Records with empty im_sku before auto-fill: {len(previously_empty_im_sku_keys)}")
+            
             # Prepare lists for bulk update and bulk create.
             objs_to_update = []
             objs_to_create = []
@@ -1527,6 +1539,110 @@ LEFT JOIN LatestTitle lt
                 print("Sample updated records after save:")
                 for rec in updated_records[:3]:
                     print(f"ASIN: {rec.asin}, SKU: {rec.marketplace_sku}, level_1: {rec.level_1}")
+            
+            # ----------------------------------------------------------
+            # 8. Save auto-filled records into new_product_mapping (staging)
+            #    Only records that have a valid im_sku are considered "matched".
+            # ----------------------------------------------------------
+            def get_company_from_region(rgn):
+                if rgn in ("IT", "UK", "DE"):
+                    return "B2fitness"
+                elif rgn == "ES":
+                    return "B2fitness LTD"
+                elif rgn in ("US", "CA"):
+                    return "brandsinn"
+                elif rgn == "FR":
+                    return "RDX INC LTD"
+                return None
+
+            def normalize_sales_channel(sc):
+                if sc == "Amazon.co.uk":
+                    return "Amazon.uk"
+                return sc
+
+            # Collect only NEWLY auto-filled records:
+            #   - Updated records: im_sku was empty before this run, now has a valid value
+            #   - Created records: brand-new rows that got im_sku filled during this run
+            def _has_valid_im_sku(obj):
+                return (
+                    obj.im_sku
+                    and str(obj.im_sku).strip()
+                    and str(obj.im_sku).strip().lower() not in ('none', 'nan', 'null')
+                )
+
+            auto_filled_objs = []
+            # Updated records: only those whose im_sku was previously empty
+            for obj in objs_to_update:
+                key = (obj.marketplace_sku, obj.asin, obj.region)
+                if key in previously_empty_im_sku_keys and _has_valid_im_sku(obj):
+                    auto_filled_objs.append(obj)
+
+            # Created records: all brand-new rows go to staging (need to be visible for mapping)
+            # For newly created objects, we need their PKs — re-fetch them
+            if objs_to_create:
+                created_keys = {(o.marketplace_sku, o.asin, o.region) for o in objs_to_create}
+                created_objs_with_pk = product_mapping.objects.using('default').filter(
+                    marketplace_sku__in={k[0] for k in created_keys},
+                    asin__in={k[1] for k in created_keys},
+                    region__in={k[2] for k in created_keys},
+                )
+                created_map = {(o.marketplace_sku, o.asin, o.region): o for o in created_objs_with_pk}
+                auto_filled_objs += [created_map[k] for k in created_keys if k in created_map]
+
+            print(f"Auto-filled records to stage in new_product_mapping: {len(auto_filled_objs)}")
+
+            staging_to_update = []
+            staging_to_create = []
+            existing_staging_ids = set(
+                new_product_mapping.objects.using('default')
+                .values_list('id', flat=True)
+            )
+
+            for pm_obj in auto_filled_objs:
+                region_val = (pm_obj.region or "").strip().upper()
+                company = get_company_from_region(region_val)
+                sc = normalize_sales_channel((pm_obj.sales_channel or "").strip())
+
+                staging_record = new_product_mapping(
+                    id=pm_obj.id,
+                    marketplace_sku=(pm_obj.marketplace_sku or "").strip(),
+                    asin=(pm_obj.asin or "").strip(),
+                    im_sku=(pm_obj.im_sku or "").strip(),
+                    parent_sku=(pm_obj.parent_sku or "").strip(),
+                    region=region_val,
+                    marketplace=sc or "",
+                    level_1=(pm_obj.level_1 or "").strip(),
+                    marketplace_sales_table="stg_tr_amazon_raw",
+                    linworks_title=(pm_obj.linworks_title or "").strip(),
+                    channel="Amazon",
+                    company=company.strip() if isinstance(company, str) else (company or ""),
+                    modified_by=(pm_obj.modified_by or "").strip(),
+                    modified_by_finance=(pm_obj.modified_by_finance or "").strip(),
+                    modified_by_admin=(pm_obj.modified_by_admin or "").strip(),
+                    comment=(pm_obj.comment or "").strip(),
+                    comment_by_finance=(pm_obj.comment_by_finance or "").strip(),
+                )
+                if pm_obj.id in existing_staging_ids:
+                    staging_to_update.append(staging_record)
+                else:
+                    staging_to_create.append(staging_record)
+
+            with transaction.atomic(using='default'):
+                if staging_to_update:
+                    print(f"Bulk updating {len(staging_to_update)} staging records...")
+                    new_product_mapping.objects.using('default').bulk_update(
+                        staging_to_update,
+                        ['marketplace_sku', 'asin', 'im_sku', 'parent_sku', 'region',
+                         'marketplace', 'level_1', 'marketplace_sales_table',
+                         'linworks_title', 'channel', 'company', 'modified_by',
+                         'modified_by_finance', 'modified_by_admin', 'comment',
+                         'comment_by_finance'],
+                    )
+                if staging_to_create:
+                    print(f"Bulk creating {len(staging_to_create)} staging records...")
+                    new_product_mapping.objects.using('default').bulk_create(staging_to_create)
+
+            print(f"Staging summary - Updated: {len(staging_to_update)}, Created: {len(staging_to_create)}")
             
             return Response(
                 {"message": "success"},
